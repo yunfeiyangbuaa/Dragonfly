@@ -56,7 +56,6 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 	if err := json.NewDecoder(reader).Decode(request); err != nil {
 		return errors.Wrap(errTypes.ErrInvalidValue, err.Error())
 	}
-
 	if err := request.Validate(strfmt.NewFormats()); err != nil {
 		return errors.Wrap(errTypes.ErrInvalidValue, err.Error())
 	}

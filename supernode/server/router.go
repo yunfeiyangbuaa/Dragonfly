@@ -10,20 +10,21 @@ import (
 	"github.com/dragonflyoss/Dragonfly/version"
 
 	"github.com/gorilla/mux"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // versionMatcher defines to parse version url path.
 const versionMatcher = "/v{version:[0-9.]+}"
 
-var m = newMetrics()
-
 func initRoute(s *Server) *mux.Router {
 	r := mux.NewRouter()
+
 	handlers := []*HandlerSpec{
 		// system
 		{Method: http.MethodGet, Path: "/_ping", HandlerFunc: s.ping},
+
 		{Method: http.MethodGet, Path: "/version", HandlerFunc: version.HandlerWithCtx},
+
+		{Method: http.MethodGet, Path: "/status", HandlerFunc: s.status},
 
 		// v0.3
 		{Method: http.MethodPost, Path: "/peer/registry", HandlerFunc: s.registry},
@@ -37,15 +38,13 @@ func initRoute(s *Server) *mux.Router {
 		{Method: http.MethodDelete, Path: "/peers/{id}", HandlerFunc: s.deRegisterPeer},
 		{Method: http.MethodGet, Path: "/peers/{id}", HandlerFunc: s.getPeer},
 		{Method: http.MethodGet, Path: "/peers", HandlerFunc: s.listPeers},
-
-		{Method: http.MethodGet, Path: "/metrics", HandlerFunc: handleMetrics},
 	}
 
 	// register API
 	for _, h := range handlers {
 		if h != nil {
-			r.Path(versionMatcher + h.Path).Methods(h.Method).Handler(m.instrumentHandler(h.Path, filter(h.HandlerFunc)))
-			r.Path(h.Path).Methods(h.Method).Handler(m.instrumentHandler(h.Path, filter(h.HandlerFunc)))
+			r.Path(versionMatcher + h.Path).Methods(h.Method).Handler(filter(h.HandlerFunc, s))
+			r.Path(h.Path).Methods(h.Method).Handler(filter(h.HandlerFunc, s))
 		}
 	}
 
@@ -55,12 +54,7 @@ func initRoute(s *Server) *mux.Router {
 	return r
 }
 
-func handleMetrics(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
-	promhttp.Handler().ServeHTTP(rw, req)
-	return nil
-}
-
-func filter(handler Handler) http.HandlerFunc {
+func filter(handler Handler, s *Server) http.HandlerFunc {
 	pctx := context.Background()
 
 	return func(w http.ResponseWriter, req *http.Request) {
@@ -79,6 +73,7 @@ func filter(handler Handler) http.HandlerFunc {
 
 // EncodeResponse encodes response in json.
 func EncodeResponse(rw http.ResponseWriter, statusCode int, data interface{}) error {
+	//fmt.Println("data",data)
 	rw.Header().Set("Content-Type", "application/json")
 	rw.WriteHeader(statusCode)
 	return json.NewEncoder(rw).Encode(data)

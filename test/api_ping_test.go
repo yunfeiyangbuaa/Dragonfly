@@ -18,8 +18,8 @@ func init() {
 	check.Suite(&APIPingSuite{})
 }
 
-// SetUpSuite does common setup in the beginning of each test.
-func (s *APIPingSuite) SetUpSuite(c *check.C) {
+// SetUpTest does common setup in the beginning of each test.
+func (s *APIPingSuite) SetUpTest(c *check.C) {
 	s.starter = command.NewStarter("SupernodeAPITestSuite")
 	if _, err := s.starter.Supernode(0); err != nil {
 		panic(fmt.Sprintf("start supernode failed:%v", err))
@@ -30,7 +30,7 @@ func (s *APIPingSuite) TearDownSuite(c *check.C) {
 	s.starter.Clean()
 }
 
-// TestPing tests /_ping API.
+// TestPing tests /info API.
 func (s *APIPingSuite) TestPing(c *check.C) {
 	resp, err := request.Get("/_ping")
 	c.Assert(err, check.IsNil)

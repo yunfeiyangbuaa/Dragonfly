@@ -28,7 +28,6 @@ require (
 	github.com/pborman/uuid v0.0.0-20180122190007-c65b2f87fee3
 	github.com/pkg/errors v0.8.0
 	github.com/prashantv/gostub v1.0.0
-	github.com/prometheus/client_golang v0.9.3
 	github.com/russross/blackfriday v0.0.0-20171011182219-6d1ef893fcb0 // indirect
 	github.com/sirupsen/logrus v1.2.0
 	github.com/spf13/afero v1.2.2
@@ -38,6 +37,7 @@ require (
 	github.com/stretchr/testify v1.2.2
 	github.com/valyala/fasthttp v1.3.0
 	github.com/willf/bitset v0.0.0-20190228212526-18bd95f470f9
+	go.etcd.io/etcd v3.3.13+incompatible
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528 // indirect
 	gopkg.in/warnings.v0 v0.1.2

@@ -22,8 +22,6 @@ import (
 	_ "net/http/pprof"
 
 	"github.com/dragonflyoss/Dragonfly/version"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // New returns a new http mux for dfdaemon
@@ -32,6 +30,5 @@ func New() *http.ServeMux {
 	s.HandleFunc("/args", getArgs)
 	s.HandleFunc("/env", getEnv)
 	s.HandleFunc("/debug/version", version.Handler)
-	s.HandleFunc("/metrics", promhttp.Handler().ServeHTTP)
 	return s
 }

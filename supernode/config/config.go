@@ -85,6 +85,8 @@ func NewBaseProperties() *BaseProperties {
 		MaxBandwidth:            200,
 		EnableProfiler:          false,
 		Debug:                   false,
+		UseHA:                   false,
+		HAConfig:                []string{"127.0.0.1:2379"},
 	}
 }
 
@@ -172,9 +174,23 @@ type BaseProperties struct {
 
 	// superNodePID is the ID of supernode, which is the same as peer ID of dfget.
 	superNodePID string
+
+	//UserhA is the mark of whether the supernode use the ha model.
+	//ha means that if the active supernode is off,the standby supernode can take over active supernode's work.
+	//and the whole system can work as before.
+	//default:false.
+	UseHA bool `yaml:"useHa"`
+
+	//HAConfig is available when UseHa is true.
+	//HAConfig configs the tool's ip and port we use to implement ha.
+	//default:[] int {127.0.0.1:2379}.
+	HAConfig []string `yaml:"haConfig"`
 }
 
 // TransLimit trans rateLimit from MB/s to B/s.
 func TransLimit(rateLimit int) int {
 	return rateLimit * 1024 * 1024
 }
+
+
+//to implement supernode ha,we supernode make active/standby supernode switch,whenever there is only a active supernode  in the system.I use etcd 's distributed lock and watch to implement it.every supernode try to get the distributed lock and only one can get it, after get the lock ,the active supernode will keep sending a msg  to keep the lock alive. once the active supernode loses the lock ,etcd's watch will notify every standby supernode to get the lock again.

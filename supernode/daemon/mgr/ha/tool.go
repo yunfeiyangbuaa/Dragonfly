@@ -9,14 +9,14 @@ type Tool interface {
 	ObtainActiveInfo(key string) (string, error)
 
 	//TryBeActive try to make standby supernode to be active.
-	TryBeActive(finished chan bool) (bool, string, error)
+	TryBeActive() (bool, string, error)
 
 	//ActiveResureItsStatus will keep to monitor to ensure this itself is still a active supernode now.
-	ActiveResureItsStatus(finished chan bool) bool
+	ActiveResureItsStatus()
 
 	//ActiveKillItself abandon the active status and the active supernode become standby supernode.
 	ActiveKillItself() bool
 
-	//CloseTool close the tool
+	//CloseTool close the tool.
 	CloseTool() error
 }

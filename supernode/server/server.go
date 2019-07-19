@@ -115,7 +115,7 @@ func (s *Server) Start(port int) error {
 
 //Server close
 func (s *Server) Close() error {
-	fmt.Println("the %s port stop", s.ServerPort)
+	fmt.Printf("the %d port stop\n", s.ServerPort)
 	s.ServerPort = ServerClose
 	return s.serverClient.Close()
 }

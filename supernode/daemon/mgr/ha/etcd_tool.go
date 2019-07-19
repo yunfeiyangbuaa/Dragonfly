@@ -2,12 +2,11 @@ package ha
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"time"
 
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
 
+	"github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
 )
 
@@ -21,7 +20,14 @@ type EtcdMgr struct {
 	leaseResp         *clientv3.LeaseGrantResponse
 }
 
-const ActiveSupernodeOFF = ""
+const (
+	//ActiveSupernodeOFF means there is no active supernode.
+	ActiveSupernodeOFF = ""
+	//ActiveSupernodeChange means active supernode change to standby supernode because of unhealthy.
+	ActiveSupernodeChange = 0
+	//ActiveSupernodeKeep means active supernode is health.
+	ActiveSupernodeKeep = 1
+)
 
 //NewEtcdMgr produce a etcdmgr object.
 func NewEtcdMgr(cfg *config.Config) (*EtcdMgr, error) {
@@ -38,8 +44,6 @@ func NewEtcdMgr(cfg *config.Config) (*EtcdMgr, error) {
 	}, err
 }
 
-//TODO(yunfeiyangbuaa): handle these log,errors and exceptions in the future
-
 //WatchActiveChange is the progress to watch the etcd,if the value of key /lock/active changes,supernode will be notified.
 func (etcd *EtcdMgr) WatchActiveChange(messageChannel chan string) {
 	var watchStartRevision int64
@@ -48,13 +52,9 @@ func (etcd *EtcdMgr) WatchActiveChange(messageChannel chan string) {
 	for watchResp := range watchChan {
 		for _, event := range watchResp.Events {
 			switch event.Type {
-			case 0:
-				//mvccpb.PUT means someone becomes a new active supernode.
-				//fmt.Println("change to:", string(event.Kv.Value), "Revision:", event.Kv.CreateRevision, event.Kv.ModRevision)
+			case ActiveSupernodeChange:
 				messageChannel <- "string(event.Kv.Value)"
-			case 1:
-				//mvccpb.DELETE means the active supernode is off.
-				//fmt.Println("deleted, ", "Revision:", event.Kv.ModRevision)
+			case ActiveSupernodeKeep:
 				messageChannel <- ActiveSupernodeOFF
 			}
 		}
@@ -69,7 +69,7 @@ func (etcd *EtcdMgr) ObtainActiveInfo(key string) (string, error) {
 		err    error
 	)
 	if getRes, err = kv.Get(context.TODO(), key); err != nil {
-		log.Fatal(err)
+		logrus.Errorf("failed to get the active supernode's info: %v", err)
 	}
 	var value string
 	for _, v := range getRes.Kvs {
@@ -79,29 +79,31 @@ func (etcd *EtcdMgr) ObtainActiveInfo(key string) (string, error) {
 }
 
 //ActiveResureItsStatus keep look on the lease's renew response.
-func (etcd *EtcdMgr) ActiveResureItsStatus(finished chan bool) bool {
+func (etcd *EtcdMgr) ActiveResureItsStatus(){
 	for {
 		select {
 		case keepResp := <-etcd.leaseKeepAliveRsp:
 			if keepResp == nil {
-				fmt.Println("lease renew fail ")
-				finished <- true
-				return false
+				logrus.Info("failed to renew the etcd lease")
+				return
 			}
 		}
 	}
 }
 
 //TryBeActive try to change the supernode's status from standby to active.
-func (etcd *EtcdMgr) TryBeActive(finished chan bool) (bool, string, error) {
+func (etcd *EtcdMgr) TryBeActive() (bool, string, error) {
 	kv := clientv3.NewKV(etcd.client)
 	//make a lease to obtain a lock
 	lease := clientv3.NewLease(etcd.client)
 	leaseResp, err := lease.Grant(context.TODO(), etcd.leaseTTL)
-	keepRespChan, kaerr := lease.KeepAlive(context.TODO(), leaseResp.ID)
+	if err != nil {
+		logrus.Errorf("failed to create a etcd lease: %v", err)
+	}
+	keepRespChan, err := lease.KeepAlive(context.TODO(), leaseResp.ID)
 	etcd.leaseKeepAliveRsp = keepRespChan
-	if kaerr != nil {
-		log.Fatal(kaerr)
+	if err != nil {
+		logrus.Errorf("failed to create etcd.leaseKeepAliveRsp: %v", err)
 	}
 	etcd.leaseResp = leaseResp
 	//if the lock is available,get the lock.
@@ -112,30 +114,32 @@ func (etcd *EtcdMgr) TryBeActive(finished chan bool) (bool, string, error) {
 		Else(clientv3.OpGet("/lock/active"))
 	txnResp, err := txn.Commit()
 	if err != nil {
-		log.Fatal(err)
+		logrus.Errorf("failed to commit a etcd transaction: %v", err)
 	}
 	if !txnResp.Succeeded {
-		//fmt.Println("this supernode get lock unsuccessfully")
 		_, err = lease.Revoke(context.TODO(), leaseResp.ID)
 		return false, string(txnResp.Responses[0].GetResponseRange().Kvs[0].Value), err
 	}
-	//fmt.Println("this supernode get lock successfully")
-	return true, etcd.hostIP, err
+	return true, etcd.hostIP, nil
 }
 
 //ActiveKillItself cancels the renew of lease.
 func (etcd *EtcdMgr) ActiveKillItself() bool {
 	_, err := etcd.client.Revoke(context.TODO(), etcd.leaseResp.ID)
 	if err != nil {
-		fmt.Printf("cancel lease fail\n")
+		logrus.Errorf("failed to cancel a etcd lease: %v", err)
 		return false
 	}
-	fmt.Printf("cancel lease success\n")
+	logrus.Info("success to cancel a etcd lease")
 	return true
 }
 
-//CloseTool close the tool used to implement supernode ha
+//CloseTool close the tool used to implement supernode ha.
 func (etcd *EtcdMgr) CloseTool() error {
-	fmt.Println("close the tool")
-	return etcd.client.Close()
+	var err error
+	if err=etcd.client.Close();err!=nil{
+		logrus.Info("success to close a etcd client")
+		return nil
+	}
+	return err
 }

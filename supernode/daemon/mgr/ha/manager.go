@@ -1,9 +1,10 @@
 package ha
 
 import (
-	"fmt"
 	"github.com/dragonflyoss/Dragonfly/common/constants"
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
+
+	"github.com/sirupsen/logrus"
 )
 
 //Manager is the struct to manager supernode ha.
@@ -16,8 +17,10 @@ type Manager struct {
 
 //NewManager produce the Manager object.
 func NewManager(cfg *config.Config) (*Manager, error) {
+	//TODO(yunfeiyangbuaa): handle the NewEtcdMgr(cfg) in the future
 	toolMgr, err := NewEtcdMgr(cfg)
 	if err != nil {
+		logrus.Errorf("failed to initial the ha tool: %v", err)
 		return nil, err
 	}
 	return &Manager{
@@ -28,28 +31,23 @@ func NewManager(cfg *config.Config) (*Manager, error) {
 	}, nil
 }
 
-//TODO(yunfeiyangbuaa): handle these log,errors and exceptions in the future
-
 //ElectDaemon is the main progress to implement active/standby switch.
 func (ha *Manager) ElectDaemon(change chan int) {
 	messageChannel := make(chan string)
-	go ha.WatchActive(messageChannel)
-	go ha.TryStandbyToActive(change)
-	//go func(){
-	//    time.Sleep(20*time.Second)
-	//    ha.GiveUpActiveStatus()
-	//}()
+	//a process to watch whether the active supernode is off.
+	go ha.watchActive(messageChannel)
+	//a process try to get the active supernode when the supernode is start.
+	go ha.tryStandbyToActive(change)
 	for {
-
 		if activeIP, ok := <-messageChannel; ok {
-			//the active node is off.
+			//when the active node is off.
 			if activeIP == ActiveSupernodeOFF {
-				//if the previous active supernode is itself.
+				//if the previous active supernode is itself,change its status to standby to avoid brain split.
 				if ha.nodeStatus == constants.SupernodeUseHaActive {
-					ha.ActiveToStandby()
+					ha.activeToStandby()
 					change <- constants.SupernodeUsehakill
 				} else {
-					ha.TryStandbyToActive(change)
+					ha.tryStandbyToActive(change)
 				}
 			}
 		}
@@ -71,57 +69,58 @@ func (ha *Manager) CompareAndSetSupernodeStatus(preStatus int, nowStatus int) bo
 		ha.nodeStatus = nowStatus
 		return true
 	}
+	logrus.Errorf("failed to set supernode status,the preStatus is %d not equal to %d", ha.nodeStatus, preStatus)
 	return false
 }
 
+//CloseHaManager close the tool use to implement supernode ha.
+func (ha *Manager) CloseHaManager() error {
+	return ha.tool.CloseTool()
+}
+
+//GiveUpActiveStatus give up its active status because of unhealthy.
+func (ha *Manager) GiveUpActiveStatus() bool {
+	return ha.tool.ActiveKillItself()
+}
+
 //StandbyToActive change the status from standby to active.
-func (ha *Manager) StandbyToActive() {
+func (ha *Manager) standbyToActive() {
 	if ha.nodeStatus == constants.SupernodeUseHaStandby {
 		ha.nodeStatus = constants.SupernodeUseHaActive
 	} else {
-		fmt.Println(ha.advertiseIP, "is already active")
+		logrus.Warnf("%s is already active,can't set it active again", ha.advertiseIP)
 	}
 }
 
 //ActiveToStandby  change the status from active to standby.
-func (ha *Manager) ActiveToStandby() {
+func (ha *Manager) activeToStandby() {
 	if ha.nodeStatus == constants.SupernodeUseHaActive {
 		ha.nodeStatus = constants.SupernodeUseHaStandby
-
 	} else {
-		fmt.Println(ha.advertiseIP, "is already standby")
+		logrus.Warnf("%s is already standby,can't set it standby again", ha.advertiseIP)
 	}
 }
 
 //TryStandbyToActive try to change the status from standby to active.
-func (ha *Manager) TryStandbyToActive(change chan int) {
-	finished := make(chan bool, 10)
-	is, ip, _ := ha.tool.TryBeActive(finished)
+func (ha *Manager) tryStandbyToActive(change chan int) {
+	is, ip, err := ha.tool.TryBeActive()
+	if err != nil {
+		logrus.Errorf("failed to try to change standby status to active status")
+	}
 	if is == true {
-		ha.StandbyToActive()
-		fmt.Println(ha.advertiseIP, "are active supernode,active ip is:", ip)
+		ha.standbyToActive()
+		logrus.Infof("%s obtain the active supernode status", ha.advertiseIP)
 		change <- constants.SupernodeUseHaActive
-		go ha.tool.ActiveResureItsStatus(finished)
-		<-finished
-		ha.ActiveToStandby()
-		fmt.Println(ha.advertiseIP, "active status is finished")
+		ha.tool.ActiveResureItsStatus()
+		ha.activeToStandby()
+		logrus.Infof("%s finishes the active supernode status", ha.advertiseIP)
 	} else {
-		fmt.Println(ha.advertiseIP, "are standby supernode,active ip is:", ip)
+		logrus.Infof("the other supernode %s obtain the active supernode status,keep watch on it", ip)
 		change <- constants.SupernodeUseHaStandby
 	}
 }
 
 //WatchActive keep watch whether the active supernode is off.
-func (ha *Manager) WatchActive(messageChannel chan string) {
+func (ha *Manager) watchActive(messageChannel chan string) {
 	ha.tool.WatchActiveChange(messageChannel)
-}
-
-//CloseHaManager close the tool use to implement supernode ha
-func (ha *Manager) CloseHaManager() error {
-	return ha.tool.CloseTool()
-}
-
-//GiveUpActiveStatus give up its active status because of unhealthy
-func (ha *Manager) GiveUpActiveStatus() bool {
-	return ha.tool.ActiveKillItself()
 }

@@ -235,7 +235,7 @@ func (p2p *P2PDownloader) pullPieceTask(item *Piece) (
 		}
 		break
 	}
-  fmt.Println("pull-task-resp:",res)
+	fmt.Println("pull-task-resp:", res)
 	if res == nil || (res.Code != constants.CodePeerContinue &&
 		res.Code != constants.CodePeerFinish &&
 		res.Code != constants.CodePeerLimited &&

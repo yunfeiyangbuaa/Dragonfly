@@ -95,7 +95,9 @@ func (api *supernodeAPI) PullPieceTask(node string, req *types.PullPieceTaskRequ
 		api.Scheme, node, peerPullPieceTaskPath, util.ParseQuery(req))
 
 	resp = new(types.PullPieceTaskResponse)
-	e = api.Get(url, resp)
+	e = api.Get(url, *resp)
+	fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!1",e)
+	resp = nil
 	return
 }
 
@@ -154,9 +156,12 @@ func (api *supernodeAPI) Get(url string, resp interface{}) error {
 		return fmt.Errorf("invalid url")
 	}
 	if code, body, e = api.HTTPClient.Get(url, api.Timeout); e != nil {
+
+
 		return e
 	}
 	if !util.HTTPStatusOk(code) {
+
 		return fmt.Errorf("%d:%s", code, body)
 	}
 	e = json.Unmarshal(body, resp)

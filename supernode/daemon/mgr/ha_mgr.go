@@ -21,5 +21,5 @@ type HaMgr interface {
 	SendGetCopy(params string, node string) error
 
 	//SendPostCopy send dfget's post request copy to standby supernode
-	SendPostCopy(req interface{}, node string, path string)([]byte,error)
+	SendPostCopy(req interface{}, node string, path string) ([]byte, error)
 }

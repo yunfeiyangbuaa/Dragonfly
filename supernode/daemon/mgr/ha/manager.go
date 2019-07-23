@@ -100,17 +100,17 @@ func (ha *Manager) SendGetCopy(params string, node string) error {
 }
 
 //SendPostCopy send dfget's post request copy to standby supernode
-func (ha *Manager) SendPostCopy(req interface{}, node string, path string) ([]byte,error){
+func (ha *Manager) SendPostCopy(req interface{}, node string, path string) ([]byte, error) {
 	url := fmt.Sprintf("%s://%s%s", "http", node, path)
 	code, resp, e := ha.copyAPI.Post(url, req, 5*time.Second)
 	if e != nil {
 		logrus.Errorf("failed to send post copy,err: %v", e)
-		return nil,e
+		return nil, e
 	} else if code != 200 {
 		logrus.Errorf("failed to send post copy,err %v,code %d not equal to 200", e, code)
-		return nil,e
+		return nil, e
 	}
-	return resp,nil
+	return resp, nil
 }
 
 //StandbyToActive change the status from standby to active.

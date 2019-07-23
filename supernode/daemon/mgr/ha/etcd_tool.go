@@ -79,7 +79,7 @@ func (etcd *EtcdMgr) ObtainActiveInfo(key string) (string, error) {
 }
 
 //ActiveResureItsStatus keep look on the lease's renew response.
-func (etcd *EtcdMgr) ActiveResureItsStatus(){
+func (etcd *EtcdMgr) ActiveResureItsStatus() {
 	for {
 		select {
 		case keepResp := <-etcd.leaseKeepAliveRsp:
@@ -137,7 +137,7 @@ func (etcd *EtcdMgr) ActiveKillItself() bool {
 //CloseTool close the tool used to implement supernode ha.
 func (etcd *EtcdMgr) CloseTool() error {
 	var err error
-	if err=etcd.client.Close();err!=nil{
+	if err = etcd.client.Close(); err != nil {
 		logrus.Info("success to close a etcd client")
 		return nil
 	}

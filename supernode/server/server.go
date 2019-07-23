@@ -110,12 +110,15 @@ func (s *Server) Start(port int) error {
 		IdleTimeout:       time.Minute * 10,
 	}
 	s.serverClient = server
+	//fmt.Println("serverClient:",s.serverClient)
 	return server.Serve(l)
 }
 
 //Server close
 func (s *Server) Close() error {
 	fmt.Printf("the %d port stop\n", s.ServerPort)
+	//fmt.Println("server:",s.serverClient)
+	err := s.serverClient.Close()
 	s.ServerPort = ServerClose
-	return s.serverClient.Close()
+	return err
 }

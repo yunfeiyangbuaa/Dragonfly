@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"time"
 
 	"github.com/dragonflyoss/Dragonfly/common/constants"
 	"github.com/dragonflyoss/Dragonfly/common/util"
@@ -110,8 +111,12 @@ type ServiceDownFuncType func(ip string, taskID string, cid string) (*types.Base
 // ClientErrorFuncType function type of SupernodeAPI#ReportClientError
 type ClientErrorFuncType func(ip string, req *types.ClientErrorRequest) (*types.BaseResponse, error)
 
-//StatusFuncType function type of SupernodeAPI#Ping
-type StatusFuncType func(ip string) (*types.BaseResponse, error)
+type StatusFuncType func(node string) (resp *types.BaseResponse, e error)
+
+//GetFuncType function type of SupernodeAPI#Ping
+type GetFuncType func(url string, resp interface{}) error
+
+type PostFuncType func(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error)
 
 // MockSupernodeAPI mock SupernodeAPI
 type MockSupernodeAPI struct {
@@ -121,18 +126,31 @@ type MockSupernodeAPI struct {
 	ServiceDownFunc ServiceDownFuncType
 	ClientErrorFunc ClientErrorFuncType
 	StatusFunc      StatusFuncType
+	GetFunc         GetFuncType
+	PostFunc        PostFuncType
 }
 
 var _ api.SupernodeAPI = &MockSupernodeAPI{}
 
-//Status implements SupernodeAPI#Ping
-//TODO[yunfeiyangbuaa]:add a ping test
-func (m *MockSupernodeAPI) Status(ip string) (
-	*types.BaseResponse, error) {
-	if m.StatusFunc != nil {
-		return m.StatusFunc(ip)
+func (m *MockSupernodeAPI) Status(node string) (resp *types.BaseResponse, e error) {
+	if m.GetFunc != nil {
+		return m.StatusFunc(node)
 	}
 	return nil, nil
+}
+
+func (m *MockSupernodeAPI) Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error) {
+	if m.GetFunc != nil {
+		return m.PostFunc(url, body, timeout)
+	}
+	return 200, nil, nil
+}
+
+func (m *MockSupernodeAPI) Get(url string, resp interface{}) error {
+	if m.GetFunc != nil {
+		return m.GetFunc(url, resp)
+	}
+	return nil
 }
 
 // Register implements SupernodeAPI#Register

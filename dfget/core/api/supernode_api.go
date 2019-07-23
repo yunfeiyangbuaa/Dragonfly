@@ -52,6 +52,8 @@ type SupernodeAPI interface {
 	ServiceDown(node string, taskID string, cid string) (resp *types.BaseResponse, e error)
 	ReportClientError(node string, req *types.ClientErrorRequest) (resp *types.BaseResponse, e error)
 	Status(node string) (resp *types.BaseResponse, e error)
+	Get(url string, resp interface{}) error
+	Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error)
 }
 
 type supernodeAPI struct {
@@ -73,7 +75,7 @@ func (api *supernodeAPI) Register(node string, req *types.RegisterRequest) (
 	url := fmt.Sprintf("%s://%s%s",
 		api.Scheme, node, peerRegisterPath)
 	fmt.Println("register-url", url)
-	if code, body, e = api.HTTPClient.PostJSON(url, req, api.Timeout); e != nil {
+	if code, body, e = api.Post(url, req, api.Timeout); e != nil {
 		return nil, e
 	}
 	if !util.HTTPStatusOk(code) {
@@ -93,7 +95,7 @@ func (api *supernodeAPI) PullPieceTask(node string, req *types.PullPieceTaskRequ
 		api.Scheme, node, peerPullPieceTaskPath, util.ParseQuery(req))
 
 	resp = new(types.PullPieceTaskResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 	return
 }
 
@@ -105,7 +107,7 @@ func (api *supernodeAPI) ReportPiece(node string, req *types.ReportPieceRequest)
 		api.Scheme, node, peerReportPiecePath, util.ParseQuery(req))
 
 	resp = new(types.BaseResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 	return
 }
 
@@ -117,7 +119,7 @@ func (api *supernodeAPI) ServiceDown(node string, taskID string, cid string) (
 		api.Scheme, node, peerServiceDownPath, taskID, cid)
 
 	resp = new(types.BaseResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 
 	return
 }
@@ -130,7 +132,7 @@ func (api *supernodeAPI) ReportClientError(node string, req *types.ClientErrorRe
 		api.Scheme, node, peerClientErrorPath, util.ParseQuery(req))
 
 	resp = new(types.BaseResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 	return
 }
 
@@ -138,11 +140,11 @@ func (api *supernodeAPI) Status(node string) (resp *types.BaseResponse, e error)
 	url := fmt.Sprintf("%s://%s%s",
 		api.Scheme, node, peerPingPath)
 	resp = new(types.BaseResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 	return
 }
 
-func (api *supernodeAPI) get(url string, resp interface{}) error {
+func (api *supernodeAPI) Get(url string, resp interface{}) error {
 	var (
 		code int
 		body []byte
@@ -159,4 +161,8 @@ func (api *supernodeAPI) get(url string, resp interface{}) error {
 	}
 	e = json.Unmarshal(body, resp)
 	return e
+}
+
+func (api *supernodeAPI) Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error) {
+	return api.HTTPClient.PostJSON(url, body, api.Timeout)
 }

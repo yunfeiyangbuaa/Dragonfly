@@ -192,5 +192,4 @@ func TransLimit(rateLimit int) int {
 	return rateLimit * 1024 * 1024
 }
 
-
 //to implement supernode ha,we supernode make active/standby supernode switch,whenever there is only a active supernode  in the system.I use etcd 's distributed lock and watch to implement it.every supernode try to get the distributed lock and only one can get it, after get the lock ,the active supernode will keep sending a msg  to keep the lock alive. once the active supernode loses the lock ,etcd's watch will notify every standby supernode to get the lock again.

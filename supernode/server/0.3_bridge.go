@@ -21,6 +21,7 @@ type RegisterResponseData struct {
 	TaskID     string `json:"taskId"`
 	FileLength int64  `json:"fileLength"`
 	PieceSize  int32  `json:"pieceSize"`
+	UseHA      bool   `jsom:"useHa"`
 }
 
 // PullPieceTaskResponseContinueData is the data when successfully pulling piece task
@@ -102,12 +103,13 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 			TaskID:     resp.ID,
 			FileLength: resp.FileLength,
 			PieceSize:  resp.PieceSize,
+			UseHA:      s.Config.UseHA,
 		},
 	})
 }
 
 func (s *Server) pullPieceTask(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
-	s.HaMgr.GiveUpActiveStatus()
+	//s.HaMgr.GiveUpActiveStatus()
 	params := req.URL.Query()
 	fmt.Println("pullTask-req:", req)
 	taskID := params.Get("taskId")

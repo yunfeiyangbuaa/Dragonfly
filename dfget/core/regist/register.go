@@ -17,6 +17,7 @@
 package regist
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -66,6 +67,7 @@ func (s *supernodeRegister) Register(peerPort int) (*RegisterResult, *errors.DfE
 	for i = 0; i < nLen; i++ {
 		req.SupernodeIP = util.ExtractHost(nodes[i])
 		resp, e = s.api.Register(nodes[i], req)
+
 		logrus.Infof("do register to %s, res:%s error:%v", nodes[i], resp, e)
 		if e != nil {
 			logrus.Errorf("register to node:%s error:%v", nodes[i], e)
@@ -88,8 +90,8 @@ func (s *supernodeRegister) Register(peerPort int) (*RegisterResult, *errors.DfE
 	}
 
 	result := NewRegisterResult(nodes[i], s.cfg.Node, s.cfg.URL,
-		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize)
-
+		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize,resp.Data.UseHa)
+	fmt.Println("HAAAAAAAAA", result.UseHa)
 	logrus.Infof("do register result:%s and cost:%.3fs", resp,
 		time.Since(start).Seconds())
 	return result, nil
@@ -153,9 +155,9 @@ func getTaskPath(taskFileName string) string {
 
 // NewRegisterResult creates a instance of RegisterResult.
 func NewRegisterResult(node string, remainder []string, url string,
-	taskID string, fileLen int64, pieceSize int32) *RegisterResult {
+	taskID string, fileLen int64, pieceSize int32, useha bool) *RegisterResult {
 	return &RegisterResult{
-		UseHa:          false,
+		UseHa:          useha,
 		Node:           node,
 		RemainderNodes: remainder,
 		URL:            url,

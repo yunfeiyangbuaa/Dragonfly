@@ -95,9 +95,10 @@ func (api *supernodeAPI) PullPieceTask(node string, req *types.PullPieceTaskRequ
 		api.Scheme, node, peerPullPieceTaskPath, util.ParseQuery(req))
 
 	resp = new(types.PullPieceTaskResponse)
-	e = api.Get(url, *resp)
-	fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!1",e)
-	resp = nil
+	if e = api.Get(url, resp); e != nil {
+		return nil, e
+	}
+
 	return
 }
 
@@ -109,7 +110,10 @@ func (api *supernodeAPI) ReportPiece(node string, req *types.ReportPieceRequest)
 		api.Scheme, node, peerReportPiecePath, util.ParseQuery(req))
 
 	resp = new(types.BaseResponse)
-	e = api.Get(url, resp)
+	if e = api.Get(url, resp); e != nil {
+		return nil, e
+	}
+
 	return
 }
 
@@ -156,7 +160,6 @@ func (api *supernodeAPI) Get(url string, resp interface{}) error {
 		return fmt.Errorf("invalid url")
 	}
 	if code, body, e = api.HTTPClient.Get(url, api.Timeout); e != nil {
-
 
 		return e
 	}

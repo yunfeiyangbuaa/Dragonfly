@@ -49,7 +49,7 @@ const (
 
 const (
 	// DefaultPieceSize 4M
-	DefaultPieceSize = 4 * 1024 * 1024
+	DefaultPieceSize =  100* 1024
 
 	// DefaultPieceSizeLimit 15M
 	DefaultPieceSizeLimit = 15 * 1024 * 1024

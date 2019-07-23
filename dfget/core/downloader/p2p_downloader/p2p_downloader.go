@@ -235,19 +235,20 @@ func (p2p *P2PDownloader) pullPieceTask(item *Piece) (
 		}
 		break
 	}
-	fmt.Println("pull-task-resp:", res)
+
 	if res == nil || (res.Code != constants.CodePeerContinue &&
 		res.Code != constants.CodePeerFinish &&
 		res.Code != constants.CodePeerLimited &&
 		res.Code != constants.Success) {
 		logrus.Errorf("pull piece task fail:%v and will migrate", res)
-
+		fmt.Println("pull-task-resp:")
 		var registerRes *regist.RegisterResult
-		if registerRes, err = p2p.Register.Register(p2p.cfg.RV.PeerPort); !cutil.IsNil(err) {
-			return nil, err
-		}
+		fmt.Println("HA:", p2p.RegisterResult.UseHa)
 		//TODO:HA should do with it
 		if p2p.RegisterResult.UseHa == false {
+			if registerRes, err = p2p.Register.Register(p2p.cfg.RV.PeerPort); !cutil.IsNil(err) {
+				return nil, err
+			}
 			p2p.pieceSizeHistory[1] = registerRes.PieceSize
 			item.Status = constants.TaskStatusStart
 			item.SuperNode = registerRes.Node
@@ -264,6 +265,7 @@ func (p2p *P2PDownloader) pullPieceTask(item *Piece) (
 func (p2p *P2PDownloader) findHaActiveSupernode() string {
 	nodes, nLen := p2p.cfg.Node, len(p2p.cfg.Node)
 	for i := 0; i < nLen; i++ {
+		time.Sleep(time.Millisecond*500)
 		pingResp, err := p2p.API.Status(nodes[i])
 		if err != nil {
 			fmt.Println("ping err")
@@ -271,9 +273,11 @@ func (p2p *P2PDownloader) findHaActiveSupernode() string {
 		}
 		status := pingResp.Code
 		if status == constants.SupernodeUseHaActive {
+			fmt.Println("find!!!!!!!!!!!!!!")
 			return nodes[i]
 		}
 	}
+	fmt.Println("not find!!!!!!!!!!!!!!")
 	return ""
 }
 

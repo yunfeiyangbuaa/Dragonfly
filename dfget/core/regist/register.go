@@ -90,7 +90,7 @@ func (s *supernodeRegister) Register(peerPort int) (*RegisterResult, *errors.DfE
 	}
 
 	result := NewRegisterResult(nodes[i], s.cfg.Node, s.cfg.URL,
-		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize,resp.Data.UseHa)
+		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize, resp.Data.UseHa)
 	fmt.Println("HAAAAAAAAA", result.UseHa)
 	logrus.Infof("do register result:%s and cost:%.3fs", resp,
 		time.Since(start).Seconds())

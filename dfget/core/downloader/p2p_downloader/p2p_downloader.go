@@ -265,7 +265,7 @@ func (p2p *P2PDownloader) pullPieceTask(item *Piece) (
 func (p2p *P2PDownloader) findHaActiveSupernode() string {
 	nodes, nLen := p2p.cfg.Node, len(p2p.cfg.Node)
 	for i := 0; i < nLen; i++ {
-		time.Sleep(time.Millisecond*500)
+		time.Sleep(time.Millisecond * 500)
 		pingResp, err := p2p.API.Status(nodes[i])
 		if err != nil {
 			fmt.Println("ping err")

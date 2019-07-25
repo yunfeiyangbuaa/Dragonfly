@@ -2,6 +2,7 @@ package ha
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
@@ -17,7 +18,8 @@ type EtcdMgr struct {
 	leaseTTL          int64
 	leaseKeepAliveRsp <-chan *clientv3.LeaseKeepAliveResponse
 	hostIP            string
-	leaseResp         *clientv3.LeaseGrantResponse
+	activeLeaseResp   *clientv3.LeaseGrantResponse
+	standbyLeaseResp  *clientv3.LeaseGrantResponse
 }
 
 const (
@@ -105,7 +107,7 @@ func (etcd *EtcdMgr) TryBeActive() (bool, string, error) {
 	if err != nil {
 		logrus.Errorf("failed to create etcd.leaseKeepAliveRsp: %v", err)
 	}
-	etcd.leaseResp = leaseResp
+	etcd.activeLeaseResp = leaseResp
 	//if the lock is available,get the lock.
 	//else read the lock
 	txn := kv.Txn(context.TODO())
@@ -124,14 +126,20 @@ func (etcd *EtcdMgr) TryBeActive() (bool, string, error) {
 }
 
 //ActiveKillItself cancels the renew of lease.
-func (etcd *EtcdMgr) ActiveKillItself() bool {
-	_, err := etcd.client.Revoke(context.TODO(), etcd.leaseResp.ID)
+func (etcd *EtcdMgr) StopKeepHeartBeat(mark string) bool {
+	var err error
+	if mark == "active" {
+		_, err = etcd.client.Revoke(context.TODO(), etcd.activeLeaseResp.ID)
+	} else {
+		_, err = etcd.client.Revoke(context.TODO(), etcd.standbyLeaseResp.ID)
+	}
 	if err != nil {
 		logrus.Errorf("failed to cancel a etcd lease: %v", err)
 		return false
 	}
 	logrus.Info("success to cancel a etcd lease")
 	return true
+
 }
 
 //CloseTool close the tool used to implement supernode ha.
@@ -142,4 +150,51 @@ func (etcd *EtcdMgr) CloseTool() error {
 		return nil
 	}
 	return err
+}
+
+func (etcd *EtcdMgr) SendStandbySupernodesInfo(key string, value string, timeout int64) error {
+	kv := clientv3.NewKV(etcd.client)
+	lease := clientv3.NewLease(etcd.client)
+	leaseResp, e := lease.Grant(context.TODO(), timeout)
+	if _, e = kv.Put(context.TODO(), key, value, clientv3.WithLease(leaseResp.ID)); e != nil {
+		return e
+	}
+	etcd.standbyLeaseResp = leaseResp
+	respchan, e := lease.KeepAlive(context.TODO(), leaseResp.ID)
+	if e != nil {
+		return e
+	}
+	go func() {
+		for {
+			<-respchan
+		}
+	}()
+	return nil
+}
+func (etcd *EtcdMgr) GetStandbySupenrodesInfo(key string) ([]string, error) {
+	kv := clientv3.NewKV(etcd.client)
+	getRes, e := kv.Get(context.TODO(), key, clientv3.WithPrefix())
+	if e != nil {
+		return nil, e
+	}
+	var values []string
+	for _, v := range getRes.Kvs {
+		values = append(values, string(v.Value))
+
+	}
+	fmt.Println("value", values)
+	return values, nil
+}
+
+//WatchActiveChange is the progress to watch the etcd,if the value of key /lock/active changes,supernode will be notified.
+func (etcd *EtcdMgr) WatchStandbySupernodes(key string, standby *[]string) {
+	var watchStartRevision int64
+	watcher := clientv3.NewWatcher(etcd.client)
+	watchChan := watcher.Watch(context.TODO(), key, clientv3.WithRev(watchStartRevision), clientv3.WithPrefix())
+	for watchResp := range watchChan {
+		for _, event := range watchResp.Events {
+			fmt.Printf("standby supernodes have changed(0:add 1:delete)code: %d\n", int(event.Type))
+			*standby, _ = etcd.GetStandbySupenrodesInfo(key)
+		}
+	}
 }

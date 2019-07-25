@@ -15,8 +15,14 @@ type Tool interface {
 	ActiveResureItsStatus()
 
 	//ActiveKillItself abandon the active status and the active supernode become standby supernode.
-	ActiveKillItself() bool
+	StopKeepHeartBeat(mark string) bool
 
 	//CloseTool close the tool.
 	CloseTool() error
+
+	SendStandbySupernodesInfo(key string, value string, timeout int64) error
+
+	GetStandbySupenrodesInfo(key string) ([]string, error)
+
+	WatchStandbySupernodes(key string, standby *[]string)
 }

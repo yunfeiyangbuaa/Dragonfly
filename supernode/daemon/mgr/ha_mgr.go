@@ -15,11 +15,11 @@ type HaMgr interface {
 	CloseHaManager() error
 
 	//GiveUpActiveStatus give up its active status because of unhealthy.
-	GiveUpActiveStatus() bool
+	StopSendHeartBeat(mark string) bool
 
 	//SendGetCopy send dfget's get request copy to standby supernode
-	SendGetCopy(params string, node string) error
+	SendGetCopy(params string)
 
 	//SendPostCopy send dfget's post request copy to standby supernode
-	SendPostCopy(req interface{}, node string, path string) ([]byte, error)
+	SendPostCopy(req interface{}, path string)
 }

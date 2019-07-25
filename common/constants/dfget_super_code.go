@@ -99,8 +99,8 @@ const (
 /*the code od supernode ha status*/
 const (
 	SupernodeUseHaFalse   = 900
-	SupernodeUseHaStandby = 901
-	SupernodeUseHaInit    = 902
+	SupernodeUseHaInit    = 901
+	SupernodeUseHaStandby = 902
 	SupernodeUseHaActive  = 903
 	SupernodeUsehakill    = 904
 )

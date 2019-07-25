@@ -63,7 +63,8 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 	}
 	fmt.Println("register-req:", request)
 	if s.HaMgr.GetSupernodeStatus() == constants.SupernodeUseHaActive {
-		s.HaMgr.SendPostCopy(request, "127.0.0.1:8003", "/peer/registry")
+		fmt.Println("?????????????????????????????????????")
+		s.HaMgr.SendPostCopy(request, "/peer/registry")
 	}
 	peerCreateRequest := &types.PeerCreateRequest{
 		IP:       request.IP,
@@ -120,7 +121,7 @@ func (s *Server) pullPieceTask(ctx context.Context, rw http.ResponseWriter, req 
 		PieceResult:     resultMap[params.Get("result")],
 	}
 	if s.HaMgr.GetSupernodeStatus() == constants.SupernodeUseHaActive {
-		s.HaMgr.SendGetCopy(req.URL.String(), "127.0.0.1:8003")
+		s.HaMgr.SendGetCopy(req.URL.String())
 	}
 	// try to get dstPID
 	dstCID := params.Get("dstCid")
@@ -195,7 +196,7 @@ func (s *Server) reportPiece(ctx context.Context, rw http.ResponseWriter, req *h
 		return err
 	}
 	if s.HaMgr.GetSupernodeStatus() == constants.SupernodeUseHaActive {
-		s.HaMgr.SendGetCopy(req.URL.String(), "127.0.0.1:8003")
+		s.HaMgr.SendGetCopy(req.URL.String())
 	}
 	request := &types.PieceUpdateRequest{
 		ClientID:    srcCID,
@@ -217,7 +218,7 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
 	if s.HaMgr.GetSupernodeStatus() == constants.SupernodeUseHaActive {
-		s.HaMgr.SendGetCopy(req.URL.String(), "127.0.0.1:8003")
+		s.HaMgr.SendGetCopy(req.URL.String())
 	}
 	fmt.Println("servicedown-req:", params)
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)

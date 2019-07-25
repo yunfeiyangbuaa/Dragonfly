@@ -107,6 +107,9 @@ func setupFlags(cmd *cobra.Command, opt *Options) {
 
 	flagSet.StringSliceVar(&opt.HAConfig, "ha-config", opt.HAConfig,
 		"if you use supernode HA,you should set the ha config info to implement ha")
+
+	flagSet.IntVar(&opt.HAStandbyPort, "standby-port", opt.HAStandbyPort,
+		"if you use supernode HA,you should set the standby address to implement ha")
 }
 
 // runSuperNode prepares configs, setups essential details and runs supernode daemon.

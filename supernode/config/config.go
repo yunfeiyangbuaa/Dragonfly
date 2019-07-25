@@ -87,6 +87,7 @@ func NewBaseProperties() *BaseProperties {
 		Debug:                   false,
 		UseHA:                   false,
 		HAConfig:                []string{"127.0.0.1:2379"},
+		HAStandbyPort:           8003,
 	}
 }
 
@@ -185,6 +186,8 @@ type BaseProperties struct {
 	//HAConfig configs the tool's ip and port we use to implement ha.
 	//default:[] int {127.0.0.1:2379}.
 	HAConfig []string `yaml:"haConfig"`
+
+	HAStandbyPort int `yaml:"HAStandbyAddress"`
 }
 
 // TransLimit trans rateLimit from MB/s to B/s.

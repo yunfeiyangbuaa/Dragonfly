@@ -94,9 +94,8 @@ func New(cfg *config.Config) (*Server, error) {
 func (s *Server) Start(port int) error {
 	s.ServerPort = port
 	router := initRoute(s)
-
+	fmt.Println("SSSSSSSSSSSSSSSSL:", port)
 	address := fmt.Sprintf("0.0.0.0:%d", port)
-	fmt.Println("server start,listen port:", address)
 	l, err := net.Listen("tcp", address)
 	if err != nil {
 		logrus.Errorf("failed to listen port %d: %v", s.Config.ListenPort, err)
@@ -110,15 +109,17 @@ func (s *Server) Start(port int) error {
 		IdleTimeout:       time.Minute * 10,
 	}
 	s.serverClient = server
+	fmt.Println("server start,listen port:", address)
 	//fmt.Println("serverClient:",s.serverClient)
 	return server.Serve(l)
 }
 
 //Server close
 func (s *Server) Close() error {
-	fmt.Printf("the %d port stop\n", s.ServerPort)
+
 	//fmt.Println("server:",s.serverClient)
 	err := s.serverClient.Close()
 	s.ServerPort = ServerClose
+	fmt.Printf("the %d port stop\n", s.ServerPort)
 	return err
 }

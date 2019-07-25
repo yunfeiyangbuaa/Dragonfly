@@ -81,9 +81,9 @@ func (d *Daemon) Run() error {
 		}
 
 	} else {
-		if changOk := d.server.HaMgr.CompareAndSetSupernodeStatus(constants.SupernodeUseHaInit, constants.SupernodeUseHaStandby); changOk == false {
-			fmt.Println(d.server.Config.AdvertiseIP, "change from initial to active failed")
-		}
+		//if changOk := d.server.HaMgr.CompareAndSetSupernodeStatus(constants.SupernodeUseHaInit, constants.SupernodeUseHaStandby); changOk == false {
+		//	fmt.Println(d.server.Config.AdvertiseIP, "change from initial to active failed")
+		//}
 		fmt.Println(d.server.Config.AdvertiseIP, "use ha,change from initial to standby,and try to obtain active status!")
 		change := make(chan int, 10)
 		go d.server.HaMgr.ElectDaemon(change)
@@ -92,10 +92,11 @@ func (d *Daemon) Run() error {
 				fmt.Println("change:", ch)
 				if ch == constants.SupernodeUseHaActive {
 					fmt.Println("server port:", d.server.ServerPort, "config port:", d.config.ListenPort)
-					if d.server.ServerPort != d.config.ListenPort && d.server.ServerPort != server.ServerClose {
+					if d.server.ServerPort != d.config.ListenPort && d.server.ServerPort != 0 {
 						d.server.Close()
 					}
 					go func() {
+
 						if err := d.server.Start(d.config.ListenPort); err != nil {
 							logrus.Errorf("failed to start HTTP server: %v", err)
 						}
@@ -105,12 +106,12 @@ func (d *Daemon) Run() error {
 					fmt.Println("game over")
 
 				} else if ch == constants.SupernodeUseHaStandby {
-					fmt.Println("server port:", d.server.ServerPort)
-					if d.server.ServerPort == d.config.ListenPort && d.server.ServerPort != server.ServerClose {
+					fmt.Println("server port?:", d.server.ServerPort)
+					if d.server.ServerPort == d.config.ListenPort {
 						d.server.Close()
 					}
 					go func() {
-						if err := d.server.Start(8003); err != nil {
+						if err := d.server.Start(d.config.HAStandbyPort); err != nil {
 							logrus.Errorf("failed to start HTTP server: %v", err)
 						}
 					}()

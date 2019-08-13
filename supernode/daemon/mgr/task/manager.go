@@ -39,12 +39,13 @@ type Manager struct {
 	progressMgr  mgr.ProgressMgr
 	cdnMgr       mgr.CDNMgr
 	schedulerMgr mgr.SchedulerMgr
+	haMgr        mgr.HaMgr
 	OriginClient httpclient.OriginHTTPClient
 }
 
 // NewManager returns a new Manager Object.
 func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetTaskMgr,
-	progressMgr mgr.ProgressMgr, cdnMgr mgr.CDNMgr, schedulerMgr mgr.SchedulerMgr, originClient httpclient.OriginHTTPClient) (*Manager, error) {
+	progressMgr mgr.ProgressMgr, cdnMgr mgr.CDNMgr, schedulerMgr mgr.SchedulerMgr, originClient httpclient.OriginHTTPClient, haMgr mgr.HaMgr) (*Manager, error) {
 	return &Manager{
 		cfg:                     cfg,
 		taskStore:               dutil.NewStore(),
@@ -54,6 +55,7 @@ func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetT
 		progressMgr:             progressMgr,
 		cdnMgr:                  cdnMgr,
 		schedulerMgr:            schedulerMgr,
+		haMgr:                   haMgr,
 		accessTimeMap:           syncmap.NewSyncMap(),
 		taskURLUnReachableStore: syncmap.NewSyncMap(),
 		OriginClient:            originClient,
@@ -61,7 +63,7 @@ func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetT
 }
 
 // Register will not only register a task.
-func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest) (taskCreateResponse *types.TaskCreateResponse, err error) {
+func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest, httpReq *types.TaskRegisterRequest) (taskCreateResponse *types.TaskCreateResponse, err error) {
 	// Step1: validate params
 	if err := validateParams(req); err != nil {
 		return nil, err
@@ -107,7 +109,7 @@ func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest) (
 	// TODO: defer rollback init Progress
 
 	// Step5: trigger CDN
-	if err := tm.triggerCdnSyncAction(ctx, task); err != nil {
+	if err := tm.triggerCdnSyncAction(ctx, task, httpReq); err != nil {
 		return nil, errors.Wrapf(errortypes.ErrSystemError, "failed to trigger cdn: %v", err)
 	}
 

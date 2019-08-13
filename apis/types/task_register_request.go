@@ -104,6 +104,12 @@ type TaskRegisterRequest struct {
 
 	// version number of dfget binary.
 	Version string `json:"version,omitempty"`
+
+	// PeerID of dfget for HA
+	PeerID string `json:"peerID,omitempty"`
+
+	// mark whether this dfgetTask trigger cdn dowmload
+	TriggerCDN int `json:"triggerCDN"`
 }
 
 // Validate validates this task register request

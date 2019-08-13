@@ -52,7 +52,7 @@ func (cw *superWriter) writerPool(ctx context.Context, wg *sync.WaitGroup, n int
 				pieceSum := fmt.Sprintf("%x", pieceMd5.Sum(nil))
 				pieceMd5Value := getPieceMd5Value(pieceSum, job.pieceContentSize+config.PieceWrapSize)
 				if cw.cdnReporter != nil {
-					if err := cw.cdnReporter.reportPieceStatus(ctx, job.taskID, job.pieceNum, pieceMd5Value, config.PieceSUCCESS); err != nil {
+					if err := cw.cdnReporter.reportPieceStatus(ctx, job.taskID, cw.config.GetSuperCID(job.taskID), cw.config.GetSuperPID(), job.pieceNum, pieceMd5Value, config.PieceSUCCESS, false); err != nil {
 						// NOTE: should we do this job again?
 						logrus.Errorf("failed to report piece status taskID %s pieceNum %d pieceMD5 %s: %v", job.taskID, job.pieceNum, pieceMd5Value, err)
 						continue

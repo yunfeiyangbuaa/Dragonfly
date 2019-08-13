@@ -19,6 +19,8 @@ package task
 import (
 	"context"
 	"fmt"
+	"github.com/dragonflyoss/Dragonfly/pkg/constants"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"net/http"
 	"time"
 
@@ -202,13 +204,18 @@ func (tm *Manager) addDfgetTask(ctx context.Context, req *types.TaskCreateReques
 	return dfgetTask, nil
 }
 
-func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInfo) error {
+func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInfo, httpReq *types.TaskRegisterRequest) error {
 	if !isFrozen(task.CdnStatus) {
 		logrus.Infof("CDN(%s) is running or has been downloaded successfully for taskID: %s", task.CdnStatus, task.ID)
+		if tm.cfg.UseHA == true && httpReq.TriggerCDN == constants.TriggerByDfget {
+			tm.haMgr.SendRegisterRequestCopy(httpReq, false)
+		}
 		return nil
 	}
-
-	if isWait(task.CdnStatus) {
+	if tm.cfg.UseHA == true && httpReq.TriggerCDN == constants.TriggerByDfget {
+		tm.haMgr.SendRegisterRequestCopy(httpReq, true)
+	}
+	if isWait(task.CdnStatus) && httpReq.TriggerCDN != constants.TriggerFalse {
 		if err := tm.initCdnNode(ctx, task); err != nil {
 			logrus.Errorf("failed to init cdn node for taskID %s: %v", task.ID, err)
 			return err
@@ -220,22 +227,57 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 	}); err != nil {
 		return err
 	}
-
-	go func() {
-		updateTaskInfo, err := tm.cdnMgr.TriggerCDN(ctx, task)
-		if err != nil {
-			logrus.Errorf("taskID(%s) trigger cdn get error: %v", task.ID, err)
-		}
-		tm.updateTask(task.ID, updateTaskInfo)
-		logrus.Infof("success to update task cdn %+v", updateTaskInfo)
-	}()
+	if httpReq.TriggerCDN != constants.TriggerFalse {
+		go func() {
+			updateTaskInfo, err := tm.cdnMgr.TriggerCDN(ctx, task)
+			if err != nil {
+				logrus.Errorf("taskID(%s) trigger cdn get error: %v", task.ID, err)
+			}
+			tm.updateTask(task.ID, updateTaskInfo)
+			logrus.Infof("success to update task cdn %+v", updateTaskInfo)
+			if tm.cfg.UseHA == true {
+				tm.sendUpdateTaskForHA(task.ID, updateTaskInfo)
+			}
+		}()
+	}
 	logrus.Infof("success to start cdn trigger for taskID: %s", task.ID)
+	return nil
+}
+
+func (tm *Manager) sendUpdateTaskForHA(taskID string, req *types.TaskInfo) error {
+	var (
+		rpcRequest ha.RpcUpdateTaskInfoRequest
+		err        error
+		resp       *bool
+	)
+	if req.CdnStatus == types.TaskInfoCdnStatusSUCCESS {
+		rpcRequest = ha.RpcUpdateTaskInfoRequest{
+			CdnStatus:  req.CdnStatus,
+			FileLength: req.FileLength,
+			RealMd5:    req.RealMd5,
+			TaskID:     taskID,
+		}
+	} else if req.CdnStatus == types.TaskInfoCdnStatusFAILED {
+		rpcRequest = ha.RpcUpdateTaskInfoRequest{
+			TaskID:    taskID,
+			CdnStatus: req.CdnStatus,
+		}
+	} else {
+		return errors.Wrapf(err, "failed to update taskinfo via rpc,unexpected req: %v", req)
+	}
+	for _, node := range tm.cfg.OtherSupernodes {
+		err = node.RpcClient.Call("RpcManager.RpcUpdateTaskInfo", rpcRequest, &resp)
+		if err != nil {
+			logrus.Errorf("failed to send update task request %v to supernode %s,err: %v", rpcRequest, node.PID, err)
+		}
+	}
 	return nil
 }
 
 func (tm *Manager) initCdnNode(ctx context.Context, task *types.TaskInfo) error {
 	var cid = tm.cfg.GetSuperCID(task.ID)
 	var pid = tm.cfg.GetSuperPID()
+	var resp bool
 	path, err := tm.cdnMgr.GetHTTPPath(ctx, task.ID)
 	if err != nil {
 		return err
@@ -251,7 +293,20 @@ func (tm *Manager) initCdnNode(ctx context.Context, task *types.TaskInfo) error 
 	}); err != nil {
 		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", task.ID)
 	}
-
+	if tm.cfg.UseHA == true {
+		initCDNRequest := ha.InitCdnRequest{
+			TaskID:        task.ID,
+			TaskPieceSize: task.PieceSize,
+			NodePID:       pid,
+			NodeIP:        tm.cfg.AdvertiseIP,
+		}
+		for _, node := range tm.cfg.OtherSupernodes {
+			err = node.RpcClient.Call("RpcManager.RpcIntCdn", initCDNRequest, &resp)
+			if err != nil {
+				logrus.Errorf("failed to send init cdn request %v to other supernode %d,err: %v", initCDNRequest, node.PID, err)
+			}
+		}
+	}
 	return tm.progressMgr.InitProgress(ctx, task.ID, pid, cid)
 }
 
@@ -335,7 +390,7 @@ func (tm *Manager) parseAvailablePeers(ctx context.Context, clientID string, tas
 		}
 
 		// get supernode IP according to the cid dynamically
-		if tm.cfg.IsSuperPID(pieceInfo.PID) {
+		if pieceInfo.PID == tm.cfg.GetSuperPID() {
 			pieceInfo.PeerIP = dfgetTask.SupernodeIP
 		}
 

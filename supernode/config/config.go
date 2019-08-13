@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/rpc"
+
+	"github.com/go-openapi/strfmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -25,6 +28,17 @@ type Config struct {
 	Storages        map[string]interface{}             `yaml:"storages"`
 }
 
+// SupernodeInfo store the supernode's info get from etcd.
+type SupernodeInfo struct {
+	IP           string
+	ListenPort   int
+	DownloadPort int
+	RpcPort      int
+	HostName     strfmt.Hostname
+	PID          string
+	RpcClient    *rpc.Client
+}
+
 // Load loads config properties from the giving file.
 func (c *Config) Load(path string) error {
 	return fileutils.LoadYaml(path, c)
@@ -40,12 +54,12 @@ func (c *Config) String() string {
 // SetCIDPrefix sets a string as the prefix for supernode CID
 // which used to distinguish from the other peer nodes.
 func (c *Config) SetCIDPrefix(ip string) {
-	c.cIDPrefix = fmt.Sprintf("cdnnode:%s~", ip)
+	c.cIDPrefix = "cdnnode:"
 }
 
 // GetSuperCID returns the cid string for taskID.
 func (c *Config) GetSuperCID(taskID string) string {
-	return fmt.Sprintf("%s%s", c.cIDPrefix, taskID)
+	return fmt.Sprintf("cdnnode:%s~%s", c.AdvertiseIP, taskID)
 }
 
 // IsSuperCID returns whether the clientID represents supernode.
@@ -65,7 +79,20 @@ func (c *Config) GetSuperPID() string {
 
 // IsSuperPID returns whether the peerID represents supernode.
 func (c *Config) IsSuperPID(peerID string) bool {
-	return peerID == c.superNodePID
+	if peerID == c.superNodePID {
+		return true
+	}
+	for _, node := range c.OtherSupernodes {
+		if node.PID == peerID {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *Config) SetOtherSupernodes(otherSupernode []SupernodeInfo) {
+	//TODO(yunfeiyangbuaa)add a lock for thread safe
+	c.OtherSupernodes = otherSupernode
 }
 
 // NewBaseProperties create an instant with default values.
@@ -87,6 +114,9 @@ func NewBaseProperties() *BaseProperties {
 		EnableProfiler:          false,
 		Debug:                   false,
 		FailAccessInterval:      3,
+		UseHA:                   false,
+		HAConfig:                []string{"127.0.0.1:2379"},
+		HARpcPort:               9000,
 	}
 }
 
@@ -179,6 +209,25 @@ type BaseProperties struct {
 
 	// superNodePID is the ID of supernode, which is the same as peer ID of dfget.
 	superNodePID string
+
+	// UseHA is the mark of whether the supernode use the ha model.
+	// ha means if the active supernode is off,the standby supernode can take over active supernode's work.
+	// and the whole system can work as before.
+	// default:false.
+	UseHA bool `yaml:"useHa"`
+
+	// HAConfig is available when UseHa is true.
+	// HAConfig configs the tool's ip and port we use to implement ha.
+	// default:[] string {127.0.0.1:2379}.
+	HAConfig []string `yaml:"haConfig"`
+
+	//HAStandbyPort is available when UseHa is true.
+	//HAStandbyPort configs the port the supernode use when its status is standby
+	//HAStandbyPort is the port to receive the active supernode's request copy to implement state synchronization
+	HARpcPort int `yaml:"haStandbyPort"`
+
+	//Other supernode in the p2p System.
+	OtherSupernodes []SupernodeInfo
 }
 
 // TransLimit trans rateLimit from MB/s to B/s.

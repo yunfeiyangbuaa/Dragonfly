@@ -97,3 +97,9 @@ const (
 	ClientErrorFileNotExist    = "FILE_NOT_EXIST"
 	ClientErrorFileMd5NotMatch = "FILE_MD5_NOT_MATCH"
 )
+
+const (
+	TriggerFalse       = -1
+	TriggerByDfget     = 0
+	TriggerBySupernode = 1
+)

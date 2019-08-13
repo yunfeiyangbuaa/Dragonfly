@@ -32,6 +32,7 @@ func NewManager() (*Manager, error) {
 
 // Register a peer and generate a unique ID as returned.
 func (pm *Manager) Register(ctx context.Context, peerCreateRequest *types.PeerCreateRequest) (peerCreateResponse *types.PeerCreateResponse, err error) {
+	var id string
 	if peerCreateRequest == nil {
 		return nil, errors.Wrap(errortypes.ErrEmptyValue, "peer create request")
 	}
@@ -41,7 +42,12 @@ func (pm *Manager) Register(ctx context.Context, peerCreateRequest *types.PeerCr
 		return nil, errors.Wrapf(errortypes.ErrInvalidValue, "peer IP: %s", ipString)
 	}
 
-	id := generatePeerID(peerCreateRequest)
+	if peerCreateRequest.PeerID == "" {
+		id = generatePeerID(peerCreateRequest)
+	} else {
+		id = peerCreateRequest.PeerID
+	}
+
 	peerInfo := &types.PeerInfo{
 		ID:       id,
 		IP:       peerCreateRequest.IP,

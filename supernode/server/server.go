@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"net"
 	"net/http"
 	"time"
@@ -29,6 +30,8 @@ type Server struct {
 	DfgetTaskMgr mgr.DfgetTaskMgr
 	ProgressMgr  mgr.ProgressMgr
 	OriginClient httpclient.OriginHTTPClient
+	HaMgr        mgr.HaMgr
+	CdnMgr       mgr.CDNMgr
 }
 
 // New creates a brand new server instance.
@@ -68,8 +71,12 @@ func New(cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	haMgr, err := ha.NewManager(cfg, peerMgr, dfgetTaskMgr, progressMgr, cdnMgr, schedulerMgr)
+	if err != nil {
+		return nil, err
+	}
 
-	taskMgr, err := task.NewManager(cfg, peerMgr, dfgetTaskMgr, progressMgr, cdnMgr, schedulerMgr, originClient)
+	taskMgr, err := task.NewManager(cfg, peerMgr, dfgetTaskMgr, progressMgr, cdnMgr, schedulerMgr, originClient, haMgr)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +87,8 @@ func New(cfg *config.Config) (*Server, error) {
 		TaskMgr:      taskMgr,
 		DfgetTaskMgr: dfgetTaskMgr,
 		ProgressMgr:  progressMgr,
+		HaMgr:        haMgr,
+		CdnMgr:       cdnMgr,
 		OriginClient: originClient,
 	}, nil
 }

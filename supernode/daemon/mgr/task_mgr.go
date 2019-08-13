@@ -22,7 +22,7 @@ type TaskMgr interface {
 	// Register a task represents that someone wants to download a file.
 	// Supernode will get the task file meta and return taskID.
 	// NOTE: If supernode cannot find the task file, the CDN download will be triggered.
-	Register(ctx context.Context, taskCreateRequest *types.TaskCreateRequest) (taskCreateResponse *types.TaskCreateResponse, err error)
+	Register(ctx context.Context, taskCreateRequest *types.TaskCreateRequest, httpReq *types.TaskRegisterRequest) (taskCreateResponse *types.TaskCreateResponse, err error)
 
 	// Get the task Info with specified taskID.
 	Get(ctx context.Context, taskID string) (*types.TaskInfo, error)

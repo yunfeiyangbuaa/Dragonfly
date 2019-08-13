@@ -2,7 +2,6 @@ package progress
 
 import (
 	"context"
-
 	"github.com/dragonflyoss/Dragonfly/apis/types"
 	"github.com/dragonflyoss/Dragonfly/pkg/errortypes"
 	"github.com/dragonflyoss/Dragonfly/pkg/stringutils"
@@ -83,6 +82,9 @@ func (pm *Manager) InitProgress(ctx context.Context, taskID, peerID, clientID st
 
 	// init cdn node if the clientID represents a supernode.
 	if pm.cfg.IsSuperCID(clientID) {
+		if peerID != pm.cfg.GetSuperPID() {
+			pm.peerProgress.add(peerID, newPeerState())
+		}
 		return pm.superProgress.add(taskID, newSuperState())
 	}
 

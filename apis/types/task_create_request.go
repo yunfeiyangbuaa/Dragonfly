@@ -90,6 +90,9 @@ type TaskCreateRequest struct {
 	// --filter parameter of dfget. The usage of it is that different rawURL may generate the same taskID.
 	//
 	TaskURL string `json:"taskURL,omitempty"`
+
+	// mark whether this dfgetTask trigger cdn dowmload
+	TriggerCDN int `json:"triggerCDN"`
 }
 
 // Validate validates this task create request

@@ -39,6 +39,9 @@ type PeerCreateRequest struct {
 
 	// version number of dfget binary.
 	Version string `json:"version,omitempty"`
+
+	//peerID of the dfget(used for supernode HA)
+	PeerID string `json:"peerID,omitempty"`
 }
 
 // Validate validates this peer create request

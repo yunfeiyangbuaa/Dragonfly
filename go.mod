@@ -29,6 +29,7 @@ require (
 	github.com/pkg/errors v0.8.0
 	github.com/prashantv/gostub v1.0.0
 	github.com/prometheus/client_golang v0.9.3
+	github.com/prometheus/common v0.4.0
 	github.com/russross/blackfriday v0.0.0-20171011182219-6d1ef893fcb0 // indirect
 	github.com/sirupsen/logrus v1.2.0
 	github.com/spf13/afero v1.2.2
@@ -38,6 +39,7 @@ require (
 	github.com/stretchr/testify v1.2.2
 	github.com/valyala/fasthttp v1.3.0
 	github.com/willf/bitset v0.0.0-20190228212526-18bd95f470f9
+	golang.org/x/tools v0.0.0-20190425150028-36563e24a262
 	gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/mgo.v2 v2.0.0-20160818020120-3f83fa500528 // indirect
 	gopkg.in/warnings.v0 v0.1.2

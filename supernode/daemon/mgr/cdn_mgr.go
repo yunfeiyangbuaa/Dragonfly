@@ -2,6 +2,7 @@ package mgr
 
 import (
 	"context"
+	"hash"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
 )
@@ -27,4 +28,8 @@ type CDNMgr interface {
 
 	// Delete the file from disk with specified taskID.
 	Delete(ctx context.Context, taskID string) error
+
+	ReportPieceStatusForHA(ctx context.Context, taskID string, cID string, pID string, pieceNum int, md5 string, pieceStatus int) (err error)
+
+	DetectCacheForHA(ctx context.Context, task *types.TaskInfo) (int, hash.Hash, *types.TaskInfo, error)
 }

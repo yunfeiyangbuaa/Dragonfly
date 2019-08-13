@@ -23,6 +23,7 @@ import (
 	"math/rand"
 	"os"
 	"path"
+	"time"
 
 	"github.com/dragonflyoss/Dragonfly/dfget/config"
 	"github.com/dragonflyoss/Dragonfly/dfget/core/api"
@@ -110,6 +111,12 @@ type ServiceDownFuncType func(ip string, taskID string, cid string) (*types.Base
 // ClientErrorFuncType function type of SupernodeAPI#ReportClientError
 type ClientErrorFuncType func(ip string, req *types.ClientErrorRequest) (*types.BaseResponse, error)
 
+// GetFuncType function type of SupernodeAPI#Get
+type GetFuncType func(url string, resp interface{}) error
+
+// PostFuncType function type of SupernodeAPI#Post
+type PostFuncType func(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error)
+
 // MockSupernodeAPI mock SupernodeAPI
 type MockSupernodeAPI struct {
 	RegisterFunc    RegisterFuncType
@@ -117,9 +124,27 @@ type MockSupernodeAPI struct {
 	ReportFunc      ReportFuncType
 	ServiceDownFunc ServiceDownFuncType
 	ClientErrorFunc ClientErrorFuncType
+	GetFunc         GetFuncType
+	PostFunc        PostFuncType
 }
 
 var _ api.SupernodeAPI = &MockSupernodeAPI{}
+
+// Post implement SupernodeAPI#Post
+func (m *MockSupernodeAPI) Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error) {
+	if m.GetFunc != nil {
+		return m.PostFunc(url, body, timeout)
+	}
+	return 200, nil, nil
+}
+
+// Get implement SupernodeAPI#Get
+func (m *MockSupernodeAPI) Get(url string, resp interface{}) error {
+	if m.GetFunc != nil {
+		return m.GetFunc(url, resp)
+	}
+	return nil
+}
 
 // Register implements SupernodeAPI#Register
 func (m *MockSupernodeAPI) Register(ip string, req *types.RegisterRequest) (

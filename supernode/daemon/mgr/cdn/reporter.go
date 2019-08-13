@@ -3,6 +3,9 @@ package cdn
 import (
 	"context"
 	"fmt"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
+
+	//"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"hash"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -138,7 +141,7 @@ func (re *reporter) processCacheByReadFile(ctx context.Context, taskID string, m
 func (re *reporter) reportPiecesStatus(ctx context.Context, taskID string, pieceMd5s []string) error {
 	// report pieces status
 	for pieceNum := 0; pieceNum < len(pieceMd5s); pieceNum++ {
-		if err := re.reportPieceStatus(ctx, taskID, pieceNum, pieceMd5s[pieceNum], config.PieceSUCCESS); err != nil {
+		if err := re.reportPieceStatus(ctx, taskID, re.cfg.GetSuperCID(taskID), re.cfg.GetSuperPID(), pieceNum, pieceMd5s[pieceNum], config.PieceSUCCESS, false); err != nil {
 			return err
 		}
 	}
@@ -146,7 +149,8 @@ func (re *reporter) reportPiecesStatus(ctx context.Context, taskID string, piece
 	return nil
 }
 
-func (re *reporter) reportPieceStatus(ctx context.Context, taskID string, pieceNum int, md5 string, pieceStatus int) (err error) {
+func (re *reporter) reportPieceStatus(ctx context.Context, taskID, cID, pID string, pieceNum int, md5 string, pieceStatus int, viaRpc bool) (err error) {
+	var resp bool
 	defer func() {
 		if err == nil {
 			logrus.Debugf("success to report piece status with taskID(%s) pieceNum(%d)", taskID, pieceNum)
@@ -158,6 +162,21 @@ func (re *reporter) reportPieceStatus(ctx context.Context, taskID string, pieceN
 			return err
 		}
 	}
-
-	return re.progressManager.UpdateProgress(ctx, taskID, re.cfg.GetSuperCID(taskID), re.cfg.GetSuperPID(), "", pieceNum, pieceStatus)
+	if re.cfg.UseHA == true && viaRpc == false {
+		report := ha.ReportPieceRequest{
+			TaskID:      taskID,
+			PieceNum:    pieceNum,
+			Md5:         md5,
+			PieceStatus: pieceStatus,
+			CID:         cID,
+			SrcPID:      pID,
+		}
+		for _, node := range re.cfg.OtherSupernodes {
+			err = node.RpcClient.Call("RpcManager.RpcReportPiece", report, &resp)
+			if err != nil {
+				logrus.Errorf("failed to send report request %v to other supernode %s,err: %v", report, node.PID, err)
+			}
+		}
+	}
+	return re.progressManager.UpdateProgress(ctx, taskID, cID, pID, "", pieceNum, pieceStatus)
 }

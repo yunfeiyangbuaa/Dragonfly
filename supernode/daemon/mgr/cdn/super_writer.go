@@ -28,12 +28,14 @@ type downloadMetadata struct {
 }
 
 type superWriter struct {
+	config      *config.Config
 	cdnStore    *store.Store
 	cdnReporter *reporter
 }
 
-func newSuperWriter(cdnStore *store.Store, cdnReporter *reporter) *superWriter {
+func newSuperWriter(cfg *config.Config, cdnStore *store.Store, cdnReporter *reporter) *superWriter {
 	return &superWriter{
+		config:      cfg,
 		cdnStore:    cdnStore,
 		cdnReporter: cdnReporter,
 	}

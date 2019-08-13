@@ -3,6 +3,7 @@ package cdn
 import (
 	"context"
 	"crypto/md5"
+	"hash"
 	"path"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -54,7 +55,7 @@ func NewManager(cfg *config.Config, cacheStore *store.Store, progressManager mgr
 		cdnReporter:     cdnReporter,
 		detector:        newCacheDetector(cacheStore, metaDataManager, originClient),
 		originClient:    originClient,
-		writer:          newSuperWriter(cacheStore, cdnReporter),
+		writer:          newSuperWriter(cfg, cacheStore, cdnReporter),
 	}, nil
 }
 
@@ -128,6 +129,40 @@ func (cm *Manager) GetStatus(ctx context.Context, taskID string) (cdnStatus stri
 // Delete the file from disk with specified taskID.
 func (cm *Manager) Delete(ctx context.Context, taskID string) error {
 	return nil
+}
+func (cm *Manager) ReportPieceStatusForHA(ctx context.Context, taskID, cID, pID string, pieceNum int, md5 string, pieceStatus int) (err error) {
+	return cm.cdnReporter.reportPieceStatus(ctx, taskID, cID, pID, pieceNum, md5, pieceStatus, true)
+}
+
+// Delete the file from disk with specified taskID.
+func (cm *Manager) DetectCacheForHA(ctx context.Context, task *types.TaskInfo) (int, hash.Hash, *types.TaskInfo, error) {
+	var breakNum int
+	var metaData *fileMetaData
+	var err error
+
+	if metaData, err = cm.detector.metaDataManager.readFileMetaData(ctx, task.ID); err == nil &&
+		checkSameFile(task, metaData) {
+		breakNum = cm.detector.parseBreakNum(ctx, task, metaData)
+	}
+	if breakNum == 0 {
+		metaData = &fileMetaData{
+			TaskID:      task.ID,
+			URL:         task.TaskURL,
+			PieceSize:   task.PieceSize,
+			HTTPFileLen: task.HTTPFileLength,
+			Identifier:  task.Identifier,
+			AccessTime:  getCurrentTimeMillisFunc(),
+			FileLength:  task.FileLength,
+			Md5:         task.Md5,
+		}
+	}
+
+	fileMD5, updateTaskInfo, err := cm.cdnReporter.reportCache(ctx, task.ID, metaData, breakNum)
+	if err != nil {
+		logrus.Errorf("failed to report cache for taskId: %s : %v", task.ID, err)
+		return 0, nil, nil, err
+	}
+	return breakNum, fileMD5, updateTaskInfo, nil
 }
 
 func (cm *Manager) handleCDNResult(ctx context.Context, task *types.TaskInfo, realMd5 string, httpFileLength, realHTTPFileLength, realFileLength int64) (bool, error) {

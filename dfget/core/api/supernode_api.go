@@ -53,6 +53,8 @@ type SupernodeAPI interface {
 	ReportPiece(node string, req *types.ReportPieceRequest) (resp *types.BaseResponse, e error)
 	ServiceDown(node string, taskID string, cid string) (resp *types.BaseResponse, e error)
 	ReportClientError(node string, req *types.ClientErrorRequest) (resp *types.BaseResponse, e error)
+	Get(url string, resp interface{}) error
+	Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error)
 }
 
 type supernodeAPI struct {
@@ -95,7 +97,7 @@ func (api *supernodeAPI) PullPieceTask(node string, req *types.PullPieceTaskRequ
 		api.Scheme, node, peerPullPieceTaskPath, httputils.ParseQuery(req))
 
 	resp = new(types.PullPieceTaskResponse)
-	if e = api.get(url, resp); e != nil {
+	if e = api.Get(url, resp); e != nil {
 		return nil, e
 	}
 	return
@@ -109,7 +111,7 @@ func (api *supernodeAPI) ReportPiece(node string, req *types.ReportPieceRequest)
 		api.Scheme, node, peerReportPiecePath, httputils.ParseQuery(req))
 
 	resp = new(types.BaseResponse)
-	if e = api.get(url, resp); e != nil {
+	if e = api.Get(url, resp); e != nil {
 		logrus.Errorf("failed to report piece{taskid:%s,range:%s},err: %v", req.TaskID, req.PieceRange, e)
 		return nil, e
 	}
@@ -127,7 +129,7 @@ func (api *supernodeAPI) ServiceDown(node string, taskID string, cid string) (
 		api.Scheme, node, peerServiceDownPath, taskID, cid)
 
 	resp = new(types.BaseResponse)
-	if e = api.get(url, resp); e != nil {
+	if e = api.Get(url, resp); e != nil {
 		logrus.Errorf("failed to send service down,err: %v", e)
 		return nil, e
 	}
@@ -145,11 +147,11 @@ func (api *supernodeAPI) ReportClientError(node string, req *types.ClientErrorRe
 		api.Scheme, node, peerClientErrorPath, httputils.ParseQuery(req))
 
 	resp = new(types.BaseResponse)
-	e = api.get(url, resp)
+	e = api.Get(url, resp)
 	return
 }
 
-func (api *supernodeAPI) get(url string, resp interface{}) error {
+func (api *supernodeAPI) Get(url string, resp interface{}) error {
 	var (
 		code int
 		body []byte
@@ -166,4 +168,9 @@ func (api *supernodeAPI) get(url string, resp interface{}) error {
 	}
 	e = json.Unmarshal(body, resp)
 	return e
+}
+
+//Post sends post request to supernode
+func (api *supernodeAPI) Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error) {
+	return api.HTTPClient.PostJSON(url, body, api.Timeout)
 }

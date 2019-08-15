@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -220,7 +219,6 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
 	caller := params.Get("caller")
-	fmt.Println("server down",req.URL)
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)
 	if err != nil {
 		return err

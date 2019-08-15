@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"math/rand"
 	"sort"
 	"time"
@@ -159,7 +160,21 @@ func (sm *Manager) getPieceResults(ctx context.Context, taskID, clientID, peerID
 			logrus.Warnf("failed to update client progress running for pieceNum(%d) taskID(%s) clientID(%s) dstPID(%s)", pieceNums[i], taskID, clientID, dstPID)
 			continue
 		}
-
+		if sm.cfg.UseHA == true {
+			var resp bool
+			req := ha.RpcUpdateClientProgressRequest{
+				TaskID:      taskID,
+				ClientID:    clientID,
+				DstPID:      dstPID,
+				PieceNum:    pieceNums[i],
+				PieceStatus: config.PieceRUNNING,
+			}
+			for _, node := range sm.cfg.GetOtherSupernodeInfo() {
+				if err := node.RpcClient.Call("RpcManager.RpcUpdateClientProgress", req, &resp); err != nil {
+					logrus.Errorf("failed to update client progress via rpc running for pieceNum(%d) taskID(%s) clientID(%s) dstPID(%s)", pieceNums[i], taskID, clientID, dstPID)
+				}
+			}
+		}
 		pieceResults = append(pieceResults, &mgr.PieceResult{
 			TaskID:   taskID,
 			PieceNum: pieceNums[i],
@@ -215,6 +230,17 @@ func (sm *Manager) tryGetPID(ctx context.Context, taskID string, pieceNum int, p
 
 		if peerState.ProducerLoad != nil {
 			if peerState.ProducerLoad.Add(1) <= config.PeerUpLimit {
+				if sm.cfg.UseHA == true {
+					var resp bool
+					for _, node := range sm.cfg.GetOtherSupernodeInfo() {
+						if peerIDs[i] == node.PID {
+							continue
+						}
+						if err := node.RpcClient.Call("RpcManager.RpcPeerLoadAddOne", peerIDs[i], &resp); err != nil {
+							logrus.Errorf("failed to add peer %s's load on supernode %s,err: %v", peerIDs[i], node.PID, err)
+						}
+					}
+				}
 				return peerIDs[i]
 			}
 			peerState.ProducerLoad.Add(-1)

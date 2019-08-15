@@ -125,9 +125,8 @@ func (api *supernodeAPI) ReportPiece(node string, req *types.ReportPieceRequest)
 func (api *supernodeAPI) ServiceDown(node string, taskID string, cid string) (
 	resp *types.BaseResponse, e error) {
 
-	url := fmt.Sprintf("%s://%s%s?taskId=%s&cid=%s",
-		api.Scheme, node, peerServiceDownPath, taskID, cid)
-
+	url := fmt.Sprintf("%s://%s%s?taskId=%s&cid=%s&caller=%s",
+		api.Scheme, node, peerServiceDownPath, taskID, cid, "dfget")
 	resp = new(types.BaseResponse)
 	if e = api.Get(url, resp); e != nil {
 		logrus.Errorf("failed to send service down,err: %v", e)

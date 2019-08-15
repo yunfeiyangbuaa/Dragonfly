@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/rpc"
+	"sync"
 
 	"github.com/go-openapi/strfmt"
 	"path/filepath"
@@ -89,11 +90,17 @@ func (c *Config) IsSuperPID(peerID string) bool {
 	}
 	return false
 }
-
-func (c *Config) SetOtherSupernodes(otherSupernode []SupernodeInfo) {
-	//TODO(yunfeiyangbuaa)add a lock for thread safe
-	c.OtherSupernodes = otherSupernode
+func (c *Config)GetOtherSupernodeInfo()[]SupernodeInfo{
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	return c.OtherSupernodes
 }
+func (c *Config)SetOtherSupernodeInfo(otherSupernodes []SupernodeInfo){
+	c.lock.Lock()
+	defer  c.lock.Unlock()
+	c.OtherSupernodes=otherSupernodes
+}
+
 
 // NewBaseProperties create an instant with default values.
 func NewBaseProperties() *BaseProperties {
@@ -228,6 +235,8 @@ type BaseProperties struct {
 
 	//Other supernode in the p2p System.
 	OtherSupernodes []SupernodeInfo
+
+	lock  sync.RWMutex
 }
 
 // TransLimit trans rateLimit from MB/s to B/s.

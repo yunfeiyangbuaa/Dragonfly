@@ -171,10 +171,10 @@ func (re *reporter) reportPieceStatus(ctx context.Context, taskID, cID, pID stri
 			CID:         cID,
 			SrcPID:      pID,
 		}
-		for _, node := range re.cfg.OtherSupernodes {
+		for _, node := range re.cfg.GetOtherSupernodeInfo() {
 			err = node.RpcClient.Call("RpcManager.RpcReportPiece", report, &resp)
 			if err != nil {
-				logrus.Errorf("failed to send report request %v to other supernode %s,err: %v", report, node.PID, err)
+				logrus.Errorf("failed to send report piece request %v to other supernode %s,err: %v", report, node.PID, err)
 			}
 		}
 	}

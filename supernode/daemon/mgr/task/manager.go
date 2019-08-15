@@ -2,6 +2,7 @@ package task
 
 import (
 	"context"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"time"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -222,7 +223,23 @@ func (tm *Manager) UpdatePieceStatus(ctx context.Context, taskID, pieceRange str
 	if !ok {
 		return errors.Wrapf(errortypes.ErrInvalidValue, "result: %s", pieceUpdateRequest.PieceStatus)
 	}
-
+	if tm.cfg.UseHA == true {
+		var resp bool
+		req := ha.ReportPieceRequest{
+			TaskID:      taskID,
+			CID:         pieceUpdateRequest.ClientID,
+			SrcPID:      srcDfgetTask.PeerID,
+			DstPID:      pieceUpdateRequest.DstPID,
+			PieceNum:    pieceNum,
+			PieceStatus: pieceStatus,
+		}
+		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
+			err = node.RpcClient.Call("RpcManager.RpcUpdateProgress", req, &resp)
+			if err != nil {
+				logrus.Errorf("failed send report request %v to other supernode %s,err: %v", req, srcDfgetTask.PeerID, err)
+			}
+		}
+	}
 	return tm.progressMgr.UpdateProgress(ctx, taskID, pieceUpdateRequest.ClientID,
 		srcDfgetTask.PeerID, pieceUpdateRequest.DstPID, pieceNum, pieceStatus)
 }

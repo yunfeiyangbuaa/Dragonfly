@@ -7,6 +7,7 @@ import (
 	"github.com/dragonflyoss/Dragonfly/pkg/constants"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr"
 	"github.com/go-openapi/strfmt"
+	"github.com/pkg/errors"
 	"math/rand"
 	"time"
 
@@ -44,7 +45,7 @@ func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetT
 		err     error
 	)
 	if cfg.UseHA != false {
-		toolMgr, err = NewEtcdMgr(cfg, peerMgr)
+		toolMgr, err = NewEtcdMgr(cfg, peerMgr,progressMgr)
 		if err != nil {
 			logrus.Errorf("failed to init the ha tool: %v", err)
 			return nil, err
@@ -84,8 +85,9 @@ func (ha *Manager) CloseHaManager() error {
 }
 
 // SendGetCopy sends dfget's get request copy to standby supernode
-func (ha *Manager) SendGetCopy(path string, node config.SupernodeInfo) error {
-	urlCopy := fmt.Sprintf("%s://%s:%d%s", "http", node.IP, node.ListenPort, path)
+func (ha *Manager) SendGetCopy(path string, params string,node config.SupernodeInfo) error {
+	urlCopy := fmt.Sprintf("%s://%s:%d%s?%s",
+		"http", node.IP,node.ListenPort,path,params)
 	resp := new(types.BaseResponse)
 	e := ha.copyAPI.Get(urlCopy, resp)
 	if e != nil {
@@ -106,17 +108,11 @@ func (ha *Manager) SendPostCopy(req interface{}, path string, node config.Supern
 	return nil
 }
 
-//func (ha *Manager) AddOtherSupernodesCdnResource(task *apiTypes.TaskInfo) {
-//	for _, node := range ha.config.OtherSupernodes {
-//		ha.AddSupernodeCdnResource(task, node)
-//	}
-//}types.TaskRegisterRequest
 func (ha *Manager) SendRegisterRequestCopy(req *apiTypes.TaskRegisterRequest, triggerDownload bool) {
 	index := ha.randomSelectSupernodeTriggerCDN()
 	if index == -1 {
 		return
 	}
-	req.PeerID = req.PeerID
 	req.TriggerCDN = constants.TriggerFalse
 	for i, node := range ha.config.OtherSupernodes {
 		if i == index && triggerDownload == true {
@@ -141,3 +137,28 @@ func (ha *Manager) randomSelectSupernodeTriggerCDN() int {
 	}
 	return rand.Intn(len(ha.config.OtherSupernodes))
 }
+
+
+func (ha *Manager) AddSupernodeCdnResource(task *apiTypes.TaskInfo, node config.SupernodeInfo) error {
+	if node.PID == ha.config.GetSuperPID() {
+		return nil
+	}
+	cid := fmt.Sprintf("%s:%s~%s", "cdnnode", node.IP, task.ID)
+	path, err := ha.CDNMgr.GetHTTPPath(context.Background(), task.ID)
+	if err != nil {
+		return err
+	}
+	if err := ha.DfgetTaskMgr.Add(context.Background(), &apiTypes.DfGetTask{
+		CID:       cid[8:],
+		Path:      path,
+		PeerID:    node.PID,
+		PieceSize: task.PieceSize,
+		Status:    apiTypes.DfGetTaskStatusWAITING,
+		TaskID:    task.ID,
+	}); err != nil {
+		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", task.ID)
+	}
+	ha.ProgressMgr.InitProgress(context.Background(), task.ID, node.PID, cid)
+	return nil
+}
+

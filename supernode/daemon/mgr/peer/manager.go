@@ -41,7 +41,6 @@ func (pm *Manager) Register(ctx context.Context, peerCreateRequest *types.PeerCr
 	if !netutils.IsValidIP(ipString) {
 		return nil, errors.Wrapf(errortypes.ErrInvalidValue, "peer IP: %s", ipString)
 	}
-
 	if peerCreateRequest.PeerID == "" {
 		id = generatePeerID(peerCreateRequest)
 	} else {

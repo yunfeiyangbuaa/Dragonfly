@@ -265,7 +265,7 @@ func (tm *Manager) sendUpdateTaskForHA(taskID string, req *types.TaskInfo) error
 	} else {
 		return errors.Wrapf(err, "failed to update taskinfo via rpc,unexpected req: %v", req)
 	}
-	for _, node := range tm.cfg.OtherSupernodes {
+	for _, node := range tm.cfg.GetOtherSupernodeInfo(){
 		err = node.RpcClient.Call("RpcManager.RpcUpdateTaskInfo", rpcRequest, &resp)
 		if err != nil {
 			logrus.Errorf("failed to send update task request %v to supernode %s,err: %v", rpcRequest, node.PID, err)
@@ -275,9 +275,9 @@ func (tm *Manager) sendUpdateTaskForHA(taskID string, req *types.TaskInfo) error
 }
 
 func (tm *Manager) initCdnNode(ctx context.Context, task *types.TaskInfo) error {
+	var resp bool
 	var cid = tm.cfg.GetSuperCID(task.ID)
 	var pid = tm.cfg.GetSuperPID()
-	var resp bool
 	path, err := tm.cdnMgr.GetHTTPPath(ctx, task.ID)
 	if err != nil {
 		return err
@@ -300,7 +300,7 @@ func (tm *Manager) initCdnNode(ctx context.Context, task *types.TaskInfo) error 
 			NodePID:       pid,
 			NodeIP:        tm.cfg.AdvertiseIP,
 		}
-		for _, node := range tm.cfg.OtherSupernodes {
+		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
 			err = node.RpcClient.Call("RpcManager.RpcIntCdn", initCDNRequest, &resp)
 			if err != nil {
 				logrus.Errorf("failed to send init cdn request %v to other supernode %d,err: %v", initCDNRequest, node.PID, err)
@@ -315,7 +315,9 @@ func (tm *Manager) processTaskStart(ctx context.Context, srcCID string, task *ty
 		return false, nil, err
 	}
 	logrus.Infof("success update dfgetTask status to RUNNING with taskID: %s clientID: %s", task.ID, srcCID)
-
+	if tm.cfg.UseHA == true {
+		tm.updateDfgetTaskViaRpc(srcCID, task.ID, types.DfGetTaskStatusRUNNING)
+	}
 	return tm.parseAvailablePeers(ctx, srcCID, task, dfgetTask)
 }
 
@@ -336,7 +338,22 @@ func (tm *Manager) processTaskRunning(ctx context.Context, srcCID, srcPID string
 	if err := tm.progressMgr.UpdateProgress(ctx, task.ID, srcCID, srcPID, req.DstPID, pieceNum, pieceStatus); err != nil {
 		return false, nil, errors.Wrap(err, "failed to update progress")
 	}
-
+	if tm.cfg.UseHA == true {
+		var resp bool
+		req := ha.ReportPieceRequest{
+			TaskID:      task.ID,
+			CID:         srcCID,
+			SrcPID:      srcPID,
+			DstPID:      req.DstPID,
+			PieceNum:    pieceNum,
+			PieceStatus: pieceStatus,
+		}
+		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
+			if err := node.RpcClient.Call("RpcManager.RpcUpdateProgress", req, &resp); err != nil {
+				logrus.Errorf("failed to send updateProgress info %v to other supernode %s via rpc,err %v", req, node.PID, err)
+			}
+		}
+	}
 	return tm.parseAvailablePeers(ctx, srcCID, task, dfgetTask)
 }
 
@@ -344,10 +361,25 @@ func (tm *Manager) processTaskFinish(ctx context.Context, taskID, clientID, dfge
 	if err := tm.dfgetTaskMgr.UpdateStatus(ctx, clientID, taskID, dfgetTaskStatus); err != nil {
 		return fmt.Errorf("failed to update dfget task status with taskID(%s) clientID(%s) status(%s): %v", taskID, clientID, dfgetTaskStatus, err)
 	}
-
+	if tm.cfg.UseHA == true {
+		tm.updateDfgetTaskViaRpc(clientID, taskID, dfgetTaskStatus)
+	}
 	return nil
 }
 
+func (tm *Manager) updateDfgetTaskViaRpc(clientID, taskID, dfgetStatus string) {
+	var resp bool
+	req := ha.RpcUpdateDfgetRequest{
+		ClientID:        clientID,
+		TaskID:          taskID,
+		DfgetTaskStatus: types.DfGetTaskStatusRUNNING,
+	}
+	for _, node := range tm.cfg.GetOtherSupernodeInfo() {
+		if err := node.RpcClient.Call("RpcManager.RpcUpdateDfgetTask", req, &resp); err != nil {
+			logrus.Errorf("failed to send processTask info %v to other supernode %s via rpc,err %v", req, node.PID, err)
+		}
+	}
+}
 func (tm *Manager) parseAvailablePeers(ctx context.Context, clientID string, task *types.TaskInfo, dfgetTask *types.DfGetTask) (bool, interface{}, error) {
 	// Step1. validate
 	if stringutils.IsEmptyStr(clientID) {

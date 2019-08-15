@@ -92,6 +92,7 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 		TriggerCDN:  request.TriggerCDN,
 	}
 	s.OriginClient.RegisterTLSConfig(taskCreateRequest.RawURL, request.Insecure, request.RootCAs)
+	request.PeerID = peerID
 	resp, err := s.TaskMgr.Register(ctx, taskCreateRequest, request)
 	if err != nil {
 		logrus.Errorf("failed to register task %+v: %v", taskCreateRequest, err)
@@ -215,7 +216,7 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	params := req.URL.Query()
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
-
+	caller := params.Get("caller")
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)
 	if err != nil {
 		return err
@@ -235,6 +236,12 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 
 	if err := s.DfgetTaskMgr.Delete(ctx, cID, taskID); err != nil {
 		return err
+	}
+	if s.Config.UseHA == true && caller == "dfget" {
+		params.Set("caller", "supernode")
+		for _, node := range s.Config.OtherSupernodes {
+			s.HaMgr.SendGetCopy("/peer/service/down",params.Encode(), node)
+		}
 	}
 
 	return EncodeResponse(rw, http.StatusOK, &types.ResultInfo{

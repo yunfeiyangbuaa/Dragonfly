@@ -25,28 +25,26 @@ type EtcdMgr struct {
 	leaseTTL          int64
 	leaseKeepAliveRsp <-chan *clientv3.LeaseKeepAliveResponse
 	LeaseResp         *clientv3.LeaseGrantResponse
+	preSupernodes     []config.SupernodeInfo
 	PeerMgr           mgr.PeerMgr
+	ProgressMgr        mgr.ProgressMgr
 }
 
 const (
-	// SupernodeOFF means there is no active supernode.
-	SupernodeOFF = ""
-
 	// etcdTimeOut is the etcd client's timeout second.
 	etcdTimeOut = 10 * time.Second
 
 	supernodeKeyPrefix = "/standby/supernode/"
 
 	// the signal received from etcd watch.
-
 	// SupernodeChange means the active supernode is off.
-	SupernodeChange = 0
+	SupernodeDEL = 0
 	// SupernodeKeep means the active supernode is healthy.
-	SupernodeKeep = 1
+	SupernodeADD = 1
 )
 
 // NewEtcdMgr produces a etcdmgr object.
-func NewEtcdMgr(cfg *config.Config, peerMgr mgr.PeerMgr) (*EtcdMgr, error) {
+func NewEtcdMgr(cfg *config.Config, peerMgr mgr.PeerMgr,progressMgr  mgr.ProgressMgr) (*EtcdMgr, error) {
 	config := clientv3.Config{
 		Endpoints:   cfg.HAConfig,
 		DialTimeout: etcdTimeOut,
@@ -62,6 +60,7 @@ func NewEtcdMgr(cfg *config.Config, peerMgr mgr.PeerMgr) (*EtcdMgr, error) {
 		config:   cfg,
 		client:   client,
 		PeerMgr:  peerMgr,
+		ProgressMgr:progressMgr,
 	}, err
 
 }
@@ -99,6 +98,7 @@ func (etcd *EtcdMgr) GetSupenrodesInfo(ctx context.Context, key string) ([]confi
 		getRes *clientv3.GetResponse
 		e      error
 	)
+	etcd.preSupernodes=etcd.config.GetOtherSupernodeInfo()
 	kv := clientv3.NewKV(etcd.client)
 	if getRes, e = kv.Get(ctx, key, clientv3.WithPrefix()); e != nil {
 		logrus.Errorf("failed to get the supernode's information,err %v", e)
@@ -128,7 +128,7 @@ func (etcd *EtcdMgr) GetSupenrodesInfo(ctx context.Context, key string) ([]confi
 			RpcClient:    conn,
 		})
 	}
-	etcd.config.SetOtherSupernodes(nodes)
+	etcd.config.SetOtherSupernodeInfo(nodes)
 	return nodes, nil
 }
 
@@ -172,15 +172,15 @@ func (etcd *EtcdMgr) WatchSupernodesChange(ctx context.Context, key string) erro
 	watchChan := watcher.Watch(ctx, key, clientv3.WithPrefix())
 	for watchResp := range watchChan {
 		for _, event := range watchResp.Events {
-			logrus.Infof("success to notice standby supernodes changes,code(0:standby supernode add,1:standby supernode delete) %d", int(event.Type))
+			logrus.Infof("success to notice supernodes changes,code(1:supernode add,0:supernode delete) %d", int(event.Type))
 			if supernodes, err = etcd.GetSupenrodesInfo(ctx, key); err != nil {
 				logrus.Errorf("failed to get standby supernode info,err: %v", err)
 				return err
 			}
 			switch event.Type {
-			case SupernodeChange:
+			case SupernodeDEL:
 				etcd.RegisterOtherSupernodesAsPeer(supernodes)
-			case SupernodeKeep:
+			case SupernodeADD:
 				etcd.DeRegisterOtherSupernodePeer(supernodes)
 			default:
 				logrus.Warnf("failed to watch active supernode,unexpected response: %d", int(event.Type))
@@ -191,16 +191,27 @@ func (etcd *EtcdMgr) WatchSupernodesChange(ctx context.Context, key string) erro
 }
 
 func (etcd *EtcdMgr) RegisterOtherSupernodesAsPeer(supernodes []config.SupernodeInfo) {
-	for _, node := range supernodes {
+	for _, node := range etcd.config.GetOtherSupernodeInfo() {
 		etcd.RegisterSupernodeAsPeer(node)
 	}
 
 }
 
-//TODO(yunfeiyangbuaa)add a deregister function
-func (etcd *EtcdMgr) DeRegisterOtherSupernodePeer(nodes []config.SupernodeInfo) error {
-	logrus.Info("some supernodes are off,should delete the peer")
-	return nil
+//TODO(yunfeiyangbuaa)modify the code
+func (etcd *EtcdMgr) DeRegisterOtherSupernodePeer(nodes []config.SupernodeInfo){
+	for _,pre:= range etcd.preSupernodes{
+		mark:=false
+		for _,now:=range etcd.config.GetOtherSupernodeInfo(){
+			if pre.PID==now.PID{
+				mark=true
+				break
+			}
+		}
+		if mark==false{
+			etcd.DeRegisterSupernodePeer(context.TODO(),pre)
+			logrus.Info("supernodes %s are off,should delete the peer",pre.PID)
+		}
+	}
 }
 
 func (etcd *EtcdMgr) RegisterSupernodeAsPeer(node config.SupernodeInfo) (err error) {
@@ -230,25 +241,13 @@ func (etcd *EtcdMgr) RegisterSupernodeAsPeer(node config.SupernodeInfo) (err err
 	return nil
 }
 
-func (ha *Manager) AddSupernodeCdnResource(task *apiTypes.TaskInfo, node config.SupernodeInfo) error {
-	if node.PID == ha.config.GetSuperPID() {
-		return nil
+
+func(etcd *EtcdMgr) DeRegisterSupernodePeer(ctx context.Context,node config.SupernodeInfo){
+
+	if err := etcd.ProgressMgr.DeletePeerStateByPeerID(ctx, node.PID); err != nil {
+		logrus.Errorf("failed to delete supernode peer peerState  %s,err: %v",node.PID,err)
 	}
-	cid := fmt.Sprintf("%s:%s~%s", "cdnnode", node.IP, task.ID)
-	path, err := ha.CDNMgr.GetHTTPPath(context.Background(), task.ID)
-	if err != nil {
-		return err
+	if err := etcd.PeerMgr.DeRegister(ctx,node.PID); err != nil {
+		logrus.Errorf("failed to delete supernode peer peerMgr %s,err: %v",node.PID,err)
 	}
-	if err := ha.DfgetTaskMgr.Add(context.Background(), &apiTypes.DfGetTask{
-		CID:       cid[8:],
-		Path:      path,
-		PeerID:    node.PID,
-		PieceSize: task.PieceSize,
-		Status:    apiTypes.DfGetTaskStatusWAITING,
-		TaskID:    task.ID,
-	}); err != nil {
-		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", task.ID)
-	}
-	ha.ProgressMgr.InitProgress(context.Background(), task.ID, node.PID, cid)
-	return nil
 }

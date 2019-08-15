@@ -99,6 +99,8 @@ type P2PDownloader struct {
 	// pullRateTime the time when the pull rate API is called to
 	// control the time interval between two calls to the API.
 	pullRateTime time.Time
+
+	failTime int
 }
 
 var _ downloader.Downloader = &P2PDownloader{}
@@ -113,6 +115,7 @@ func NewP2PDownloader(cfg *config.Config,
 		API:            api,
 		Register:       register,
 		RegisterResult: result,
+		failTime:0,
 	}
 	p2p.init()
 	return p2p
@@ -249,16 +252,23 @@ func (p2p *P2PDownloader) pullPieceTask(item *Piece) (
 		return res, err
 	}
 
-	logrus.Errorf("pull piece task fail:%v and will migrate", res)
-	var registerRes *regist.RegisterResult
-	if registerRes, err = p2p.Register.Register(p2p.cfg.RV.PeerPort); err != nil {
-		return nil, err
+
+	if p2p.cfg.UseHA&&p2p.failTime< len(p2p.cfg.Node){
+		logrus.Errorf("pull piece task fail,change another supernode download because supernode use ha", res)
+		item.SuperNode=p2p.cfg.Node[p2p.failTime]
+		p2p.failTime++
+	}else{
+		logrus.Errorf("pull piece task fail:%v and will migrate", res)
+		var registerRes *regist.RegisterResult
+		if registerRes, err = p2p.Register.Register(p2p.cfg.RV.PeerPort); err != nil {
+			return nil, err
+		}
+		p2p.pieceSizeHistory[1] = registerRes.PieceSize
+		item.Status = constants.TaskStatusStart
+		item.SuperNode = registerRes.Node
+		item.TaskID = registerRes.TaskID
+		printer.Println("migrated to node:" + item.SuperNode)
 	}
-	p2p.pieceSizeHistory[1] = registerRes.PieceSize
-	item.Status = constants.TaskStatusStart
-	item.SuperNode = registerRes.Node
-	item.TaskID = registerRes.TaskID
-	printer.Println("migrated to node:" + item.SuperNode)
 	return p2p.pullPieceTask(item)
 }
 

@@ -239,6 +239,8 @@ type Config struct {
 
 	// The reason of backing to source.
 	BackSourceReason int `json:"-"`
+
+	UseHA  bool `json:"useHA"`
 }
 
 func (cfg *Config) String() string {

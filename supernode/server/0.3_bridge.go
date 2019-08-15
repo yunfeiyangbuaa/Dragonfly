@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -22,6 +23,7 @@ type RegisterResponseData struct {
 	TaskID     string `json:"taskId"`
 	FileLength int64  `json:"fileLength"`
 	PieceSize  int32  `json:"pieceSize"`
+	UseHA      bool   `json:"useHA"`
 }
 
 // PullPieceTaskResponseContinueData is the data when successfully pulling piece task
@@ -106,6 +108,8 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 			TaskID:     resp.ID,
 			FileLength: resp.FileLength,
 			PieceSize:  resp.PieceSize,
+			UseHA:s.Config.UseHA,
+
 		},
 	})
 }
@@ -190,7 +194,6 @@ func (s *Server) reportPiece(ctx context.Context, rw http.ResponseWriter, req *h
 	srcCID := params.Get("cid")
 	dstCID := params.Get("dstCid")
 	pieceRange := params.Get("pieceRange")
-
 	dstDfgetTask, err := s.DfgetTaskMgr.Get(ctx, dstCID, taskID)
 	if err != nil {
 		return err
@@ -217,6 +220,7 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
 	caller := params.Get("caller")
+	fmt.Println("server down",req.URL)
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)
 	if err != nil {
 		return err

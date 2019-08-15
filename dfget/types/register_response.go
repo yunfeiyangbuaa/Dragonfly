@@ -38,4 +38,5 @@ type RegisterResponseData struct {
 	TaskID     string `json:"taskId"`
 	FileLength int64  `json:"fileLength"`
 	PieceSize  int32  `json:"pieceSize"`
+	UseHA      bool   `json:"useHA"`
 }

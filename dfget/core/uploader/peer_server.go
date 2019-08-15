@@ -464,7 +464,14 @@ func (ps *peerServer) shutdown() {
 	ps.syncTaskMap.Range(func(key, value interface{}) bool {
 		task, ok := value.(*taskConfig)
 		if ok {
-			ps.api.ServiceDown(task.superNode, task.taskID, task.cid)
+			UseHA:=true
+			if _,err:=ps.api.ServiceDown(task.superNode, task.taskID, task.cid);err!=nil&&UseHA{
+				for _,node:=range ps.cfg.Node{
+					 if _,err:=ps.api.ServiceDown(node, task.taskID, task.cid);err==nil{
+					 	break
+					}
+				}
+			}
 			serviceFile := helper.GetServiceFile(key.(string), task.dataDir)
 			os.Remove(serviceFile)
 			logrus.Infof("shutdown, remove task id:%s file:%s",
@@ -499,7 +506,14 @@ func (ps *peerServer) deleteExpiredFile(path string, info os.FileInfo,
 		// if the last access time is expireTime ago
 		if time.Since(lastAccessTime) > expireTime {
 			if ok {
-				ps.api.ServiceDown(task.superNode, task.taskID, task.cid)
+				UseHA:=true
+				if _,err:=ps.api.ServiceDown(task.superNode, task.taskID, task.cid);err!=nil&&UseHA{
+					for _,node:=range ps.cfg.Node{
+						if _,err:=ps.api.ServiceDown(node, task.taskID, task.cid);err==nil{
+							break
+						}
+					}
+				}
 			}
 			os.Remove(path)
 			ps.syncTaskMap.Delete(taskName)

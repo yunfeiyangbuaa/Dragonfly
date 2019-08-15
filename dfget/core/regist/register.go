@@ -91,9 +91,10 @@ func (s *supernodeRegister) Register(peerPort int) (*RegisterResult, *errortypes
 		logrus.Errorf("register fail:%v", err)
 		return nil, err
 	}
+    s.cfg.UseHA=resp.Data.UseHA
 
 	result := NewRegisterResult(nodes[i], s.cfg.Node, s.cfg.URL,
-		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize)
+		resp.Data.TaskID, resp.Data.FileLength, resp.Data.PieceSize,resp.Data.UseHA)
 
 	logrus.Infof("do register result:%s and cost:%.3fs", resp,
 		time.Since(start).Seconds())
@@ -170,7 +171,7 @@ func getTaskPath(taskFileName string) string {
 
 // NewRegisterResult creates an instance of RegisterResult.
 func NewRegisterResult(node string, remainder []string, url string,
-	taskID string, fileLen int64, pieceSize int32) *RegisterResult {
+	taskID string, fileLen int64, pieceSize int32,ha bool) *RegisterResult {
 	return &RegisterResult{
 		Node:           node,
 		RemainderNodes: remainder,
@@ -178,6 +179,7 @@ func NewRegisterResult(node string, remainder []string, url string,
 		TaskID:         taskID,
 		FileLength:     fileLen,
 		PieceSize:      pieceSize,
+		UseHA:ha,
 	}
 }
 
@@ -189,6 +191,7 @@ type RegisterResult struct {
 	TaskID         string
 	FileLength     int64
 	PieceSize      int32
+	UseHA           bool
 }
 
 func (r *RegisterResult) String() string {

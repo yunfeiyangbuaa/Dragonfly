@@ -39,6 +39,8 @@ type RegisterRequest struct {
 	Dfdaemon    bool     `json:"dfdaemon,omitempty"`
 	Insecure    bool     `json:"insecure,omitempty"`
 	RootCAs     [][]byte `json:"rootCAs,omitempty"`
+	PeerID      string   `json:"peerID,omitempty"`
+	TriggerCDN  int      `json:"triggerCDN"`
 }
 
 func (r *RegisterRequest) String() string {

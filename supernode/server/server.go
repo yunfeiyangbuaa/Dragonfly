@@ -26,6 +26,7 @@ import (
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/cdn"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/dfgettask"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/peer"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/progress"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/scheduler"
@@ -46,6 +47,8 @@ type Server struct {
 	DfgetTaskMgr mgr.DfgetTaskMgr
 	ProgressMgr  mgr.ProgressMgr
 	OriginClient httpclient.OriginHTTPClient
+	HaMgr        mgr.HaMgr
+	CdnMgr       mgr.CDNMgr
 }
 
 // New creates a brand new server instance.
@@ -88,6 +91,11 @@ func New(cfg *config.Config, register prometheus.Registerer) (*Server, error) {
 		return nil, err
 	}
 
+	haMgr, err := ha.NewManager(cfg, peerMgr, dfgetTaskMgr, progressMgr, cdnMgr, schedulerMgr)
+	if err != nil {
+		return nil, err
+	}
+
 	taskMgr, err := task.NewManager(cfg, peerMgr, dfgetTaskMgr, progressMgr, cdnMgr,
 		schedulerMgr, originClient, register)
 	if err != nil {
@@ -100,6 +108,7 @@ func New(cfg *config.Config, register prometheus.Registerer) (*Server, error) {
 		TaskMgr:      taskMgr,
 		DfgetTaskMgr: dfgetTaskMgr,
 		ProgressMgr:  progressMgr,
+		HaMgr:        haMgr,
 		OriginClient: originClient,
 	}, nil
 }

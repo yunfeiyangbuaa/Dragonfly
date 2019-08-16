@@ -3,16 +3,12 @@ package ha
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"os"
-	"time"
-
 	apiTypes "github.com/dragonflyoss/Dragonfly/apis/types"
 	"github.com/dragonflyoss/Dragonfly/dfget/core/api"
-	"github.com/dragonflyoss/Dragonfly/dfget/types"
-	"github.com/dragonflyoss/Dragonfly/pkg/constants"
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr"
+	"math/rand"
+	"os"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
@@ -78,50 +74,28 @@ func (ha *Manager) CloseHaManager(ctx context.Context) error {
 	return ha.tool.Close(ctx)
 }
 
-// SendGetCopy sends dfget's get request copy to standby supernode
-func (ha *Manager) SendGetCopy(ctx context.Context, path string, params string, node config.SupernodeInfo) error {
-	urlCopy := fmt.Sprintf("%s://%s:%d%s?%s",
-		"http", node.IP, node.ListenPort, path, params)
-	resp := new(types.BaseResponse)
-	if e := ha.copyAPI.Get(urlCopy, resp); e != nil {
-		logrus.Errorf("failed to send %s get copy,err: %v", path, e)
-		return e
-	}
-	return nil
-}
-
-// SendPostCopy sends dfget's post request copy to standby supernode
-func (ha *Manager) SendPostCopy(ctx context.Context, req interface{}, path string, node config.SupernodeInfo) error {
-	url := fmt.Sprintf("%s://%s:%d%s", "http", node.IP, node.ListenPort, path)
-	if _, _, e := ha.copyAPI.Post(url, req, 5*time.Second); e != nil {
-		logrus.Errorf("failed to send post copy,err: %v", e)
-		return e
-	}
-	return nil
-}
-
-// SendRegisterRequestCopy send dfget register req copy to other supernode to register
-func (ha *Manager) SendRegisterRequestCopy(ctx context.Context, req *apiTypes.TaskRegisterRequest, triggerDownload bool) {
-	index := ha.randomSelectSupernodeTriggerCDN(ctx)
-	if index == -1 {
-		return
-	}
-	req.TriggerCDN = constants.TriggerFalse
-	for i, node := range ha.config.OtherSupernodes {
-		if i == index && triggerDownload == true {
-			continue
-		}
-		if err := ha.SendPostCopy(ctx, req, "/peer/registry", node); err != nil {
-			logrus.Errorf("failed to send register copy to %s,err: %v", node.PID, err)
-		}
-	}
-	if triggerDownload == true {
-		req.TriggerCDN = constants.TriggerBySupernode
-		if err := ha.SendPostCopy(ctx, req, "/peer/registry", ha.config.OtherSupernodes[index]); err != nil {
-			logrus.Errorf("failed to send register copy to %s,err: %v", ha.config.OtherSupernodes[index].PID, err)
-		}
-	}
-}
+//// SendRegisterRequestCopy send dfget register req copy to other supernode to register
+//func (ha *Manager) SendRegisterRequestCopy(ctx context.Context, req *apiTypes.TaskRegisterRequest, triggerDownload bool) {
+//	index := ha.randomSelectSupernodeTriggerCDN(ctx)
+//	if index == -1 {
+//		return
+//	}
+//	req.TriggerCDN = constants.TriggerFalse
+//	for i, node := range ha.config.OtherSupernodes {
+//		if i == index && triggerDownload == true {
+//			continue
+//		}
+//		if err := ha.SendPostCopy(ctx, req, "/peer/registry", node); err != nil {
+//			logrus.Errorf("failed to send register copy to %s,err: %v", node.PID, err)
+//		}
+//	}
+//	if triggerDownload == true {
+//		req.TriggerCDN = constants.TriggerBySupernode
+//		if err := ha.SendPostCopy(ctx, req, "/peer/registry", ha.config.OtherSupernodes[index]); err != nil {
+//			logrus.Errorf("failed to send register copy to %s,err: %v", ha.config.OtherSupernodes[index].PID, err)
+//		}
+//	}
+//}
 
 func (ha *Manager) randomSelectSupernodeTriggerCDN(ctx context.Context) int {
 	if supernodeNum := len(ha.config.OtherSupernodes); supernodeNum == 0 {
@@ -152,3 +126,26 @@ func (ha *Manager) addSupernodeCdnResource(ctx context.Context, task *apiTypes.T
 	ha.ProgressMgr.InitProgress(ctx, task.ID, node.PID, cid)
 	return nil
 }
+
+
+//// SendGetCopy sends dfget's get request copy to standby supernode
+//func (ha *Manager) SendGetCopy(ctx context.Context, path string, params string, node config.SupernodeInfo) error {
+//	urlCopy := fmt.Sprintf("%s://%s:%d%s?%s",
+//		"http", node.IP, node.ListenPort, path, params)
+//	resp := new(types.BaseResponse)
+//	if e := ha.copyAPI.Get(urlCopy, resp); e != nil {
+//		logrus.Errorf("failed to send %s get copy,err: %v", path, e)
+//		return e
+//	}
+//	return nil
+//}
+//
+//// SendPostCopy sends dfget's post request copy to standby supernode
+//func (ha *Manager) SendPostCopy(ctx context.Context, req interface{}, path string, node config.SupernodeInfo) error {
+//	url := fmt.Sprintf("%s://%s:%d%s", "http", node.IP, node.ListenPort, path)
+//	if _, _, e := ha.copyAPI.Post(url, req, 5*time.Second); e != nil {
+//		logrus.Errorf("failed to send post copy,err: %v", e)
+//		return e
+//	}
+//	return nil
+//}

@@ -138,7 +138,7 @@ func (s *SupernodeAPITestSuite) TestSupernodeAPI_get(c *check.C) {
 		s.mock.GetFunc = s.mock.CreateGetFunc(code, []byte(res), e)
 		msg := fmt.Sprintf("code:%d res:%s e:%v", code, res, e)
 		resp := new(testRes)
-		err := api.Get("http://localhost", resp)
+		err := api.get("http://localhost", resp)
 		return resp, err, msg
 	}
 
@@ -158,7 +158,7 @@ func (s *SupernodeAPITestSuite) TestSupernodeAPI_get(c *check.C) {
 	c.Assert(r.A, check.Equals, 1, check.Commentf(m))
 	c.Assert(e, check.IsNil, check.Commentf(m))
 
-	e = api.Get("", nil)
+	e = api.get("", nil)
 	c.Assert(e.Error(), check.Equals, "invalid url")
 }
 

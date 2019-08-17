@@ -18,6 +18,7 @@ package task
 
 import (
 	"context"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"time"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -85,6 +86,7 @@ type Manager struct {
 	progressMgr  mgr.ProgressMgr
 	cdnMgr       mgr.CDNMgr
 	schedulerMgr mgr.SchedulerMgr
+	haMgr        mgr.HaMgr
 	OriginClient httpclient.OriginHTTPClient
 	metrics      *metrics
 }
@@ -92,7 +94,7 @@ type Manager struct {
 // NewManager returns a new Manager Object.
 func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetTaskMgr,
 	progressMgr mgr.ProgressMgr, cdnMgr mgr.CDNMgr, schedulerMgr mgr.SchedulerMgr,
-	originClient httpclient.OriginHTTPClient, register prometheus.Registerer) (*Manager, error) {
+	originClient httpclient.OriginHTTPClient, register prometheus.Registerer, haMgr mgr.HaMgr) (*Manager, error) {
 	return &Manager{
 		cfg:                     cfg,
 		taskStore:               dutil.NewStore(),
@@ -105,12 +107,13 @@ func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetT
 		accessTimeMap:           syncmap.NewSyncMap(),
 		taskURLUnReachableStore: syncmap.NewSyncMap(),
 		OriginClient:            originClient,
+		haMgr:                   haMgr,
 		metrics:                 newMetrics(register),
 	}, nil
 }
 
 // Register will not only register a task.
-func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest) (taskCreateResponse *types.TaskCreateResponse, err error) {
+func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest, httpREQ *types.TaskRegisterRequest) (taskCreateResponse *types.TaskCreateResponse, err error) {
 	// Step1: validate params
 	if err := validateParams(req); err != nil {
 		return nil, err
@@ -157,7 +160,7 @@ func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest) (
 	// TODO: defer rollback init Progress
 
 	// Step5: trigger CDN
-	if err := tm.triggerCdnSyncAction(ctx, task); err != nil {
+	if err := tm.triggerCdnSyncAction(ctx, task, httpREQ); err != nil {
 		return nil, errors.Wrapf(errortypes.ErrSystemError, "failed to trigger cdn: %v", err)
 	}
 
@@ -232,6 +235,10 @@ func (tm *Manager) GetPieces(ctx context.Context, taskID, clientID string, req *
 	}
 	logrus.Debugf("success to get task: %+v", task)
 
+	if task.CDNPeerID != "" && task.CDNPeerID != tm.cfg.GetSuperPID() {
+		return tm.GetPiecesFromOtherSupernode(ctx , taskID , task , clientID,req , dfgetTaskStatus)
+	}
+
 	// update accessTime for taskID
 	if err := tm.accessTimeMap.Add(task.ID, timeutils.GetCurrentTimeMillis()); err != nil {
 		logrus.Warnf("failed to update accessTime for taskID(%s): %v", task.ID, err)
@@ -247,6 +254,58 @@ func (tm *Manager) GetPieces(ctx context.Context, taskID, clientID string, req *
 	}
 	logrus.Debugf("start to process task(%s) finish", taskID)
 	return true, nil, tm.processTaskFinish(ctx, taskID, clientID, dfgetTaskStatus)
+}
+
+func (tm *Manager) GetPiecesFromOtherSupernode(ctx context.Context, taskID string, task *types.TaskInfo, clientID string,
+	req *types.PiecePullRequest, dfgetTaskStatus string) (bool, interface{}, error) {
+	if dfgetTaskStatus == types.DfGetTaskStatusWAITING {
+		logrus.Debugf("start to process task(%s) start", taskID)
+		if err := tm.dfgetTaskMgr.UpdateStatus(ctx, clientID, task.ID, types.DfGetTaskStatusRUNNING); err != nil {
+			return false, nil, err
+		}
+	}else  if dfgetTaskStatus == types.DfGetTaskStatusRUNNING {
+		dfgetTask, _:= tm.dfgetTaskMgr.Get(ctx, clientID, taskID)
+		pieceNum := util.CalculatePieceNum(req.PieceRange)
+		if pieceNum == -1 {
+		return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "pieceRange: %s", req.PieceRange)
+		}
+		pieceStatus, success := convertToPeerPieceStatus(req.PieceResult, req.DfgetTaskStatus)
+		if !success {
+		return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "failed to convert result: %s and status %s to pieceStatus", req.PieceResult, req.DfgetTaskStatus)
+		}
+
+		logrus.Debugf("start to update progress taskID (%s) srcCID (%s) srcPID (%s) dstPID (%s) pieceNum (%d) pieceStatus (%d)",
+		task.ID, clientID, dfgetTask.PeerID, req.DstPID, pieceNum, pieceStatus)
+		if err := tm.progressMgr.UpdateProgress(ctx, task.ID, clientID, dfgetTask.PeerID, req.DstPID, pieceNum, pieceStatus); err != nil {
+		return false, nil, errors.Wrap(err, "failed to update progress")
+		}
+	}else{
+		logrus.Debugf("start to process task(%s) finish", taskID)
+		return true, nil, tm.processTaskFinish(ctx, taskID, clientID, dfgetTaskStatus)
+	}
+
+	var dstNode config.SupernodeInfo
+
+	RPCReq := ha.RpcGetPieceRequest{
+		DfgetTaskStatus: req.DfgetTaskStatus,
+		PieceResult:     req.PieceResult,
+		PieceRange:      req.PieceRange,
+		TaskId:          taskID,
+		Cid:             clientID,
+	}
+	for _, node := range tm.cfg.OtherSupernodes {
+		if node.PID == task.CDNPeerID {
+			dstNode = node
+			break
+		}
+	}
+	var RPCResponse ha.RpcGetPieceResponse
+	err:=dstNode.RPCClient.Call("RpcManager.RpcGetPiece", RPCReq, &RPCResponse)
+	if RPCResponse.ErrMsg != "" {
+		return false, nil, errors.Wrapf(errortypes.DfError{RPCResponse.ErrCode, RPCResponse.ErrMsg},
+			"failed to send pull task request %v to other supernode %s,err: %v", RPCReq, dstNode.PID)
+	}
+	return RPCResponse.IsFinished, RPCResponse.Data, err
 }
 
 // UpdatePieceStatus update the piece status with specified parameters.
@@ -269,6 +328,24 @@ func (tm *Manager) UpdatePieceStatus(ctx context.Context, taskID, pieceRange str
 	pieceStatus, ok := mgr.PieceStatusMap[pieceUpdateRequest.PieceStatus]
 	if !ok {
 		return errors.Wrapf(errortypes.ErrInvalidValue, "result: %s", pieceUpdateRequest.PieceStatus)
+	}
+
+	if tm.cfg.UseHA &&pieceUpdateRequest.SendCopy {
+		var resp bool
+		req := ha.ReportPieceRequest{
+			TaskID:      taskID,
+			CID:         pieceUpdateRequest.ClientID,
+			SrcPID:      srcDfgetTask.PeerID,
+			DstCID:      pieceUpdateRequest.DstCID,
+			PieceNum:    pieceNum,
+			PieceStatus: pieceStatus,
+		}
+		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
+			err = node.RPCClient.Call("RpcManager.RpcUpdateProgress", req, &resp)
+			if err != nil {
+				logrus.Errorf("failed send report request %v to other supernode %s,err: %v", req, node.PID, err)
+			}
+		}
 	}
 
 	return tm.progressMgr.UpdateProgress(ctx, taskID, pieceUpdateRequest.ClientID,

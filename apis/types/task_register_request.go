@@ -104,6 +104,10 @@ type TaskRegisterRequest struct {
 
 	// version number of dfget binary.
 	Version string `json:"version,omitempty"`
+
+	PeerID string `json:"peerID"`
+
+	Trigger bool `json:"trigger"`
 }
 
 // Validate validates this task register request

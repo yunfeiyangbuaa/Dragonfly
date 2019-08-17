@@ -19,13 +19,15 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/dragonflyoss/Dragonfly/pkg/stringutils"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"net/http"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
 	"github.com/dragonflyoss/Dragonfly/pkg/constants"
 	"github.com/dragonflyoss/Dragonfly/pkg/errortypes"
 	"github.com/dragonflyoss/Dragonfly/pkg/netutils"
-	"github.com/dragonflyoss/Dragonfly/pkg/stringutils"
 	sutil "github.com/dragonflyoss/Dragonfly/supernode/util"
 
 	"github.com/go-openapi/strfmt"
@@ -73,7 +75,6 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 	if err := json.NewDecoder(reader).Decode(request); err != nil {
 		return errors.Wrap(errortypes.ErrInvalidValue, err.Error())
 	}
-
 	if err := request.Validate(strfmt.NewFormats()); err != nil {
 		return errors.Wrap(errortypes.ErrInvalidValue, err.Error())
 	}
@@ -83,6 +84,7 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 		HostName: strfmt.Hostname(request.HostName),
 		Port:     request.Port,
 		Version:  request.Version,
+		PeerID:   request.PeerID,
 	}
 	peerCreateResponse, err := s.PeerMgr.Register(ctx, peerCreateRequest)
 	if err != nil {
@@ -106,11 +108,18 @@ func (s *Server) registry(ctx context.Context, rw http.ResponseWriter, req *http
 		SupernodeIP: request.SuperNodeIP,
 	}
 	s.OriginClient.RegisterTLSConfig(taskCreateRequest.RawURL, request.Insecure, request.RootCAs)
-	resp, err := s.TaskMgr.Register(ctx, taskCreateRequest)
+	request.PeerID = peerID
+	resp, err := s.TaskMgr.Register(ctx, taskCreateRequest, request)
 	if err != nil {
 		logrus.Errorf("failed to register task %+v: %v", taskCreateRequest, err)
 		return err
 	}
+	//if !request.Trigger{
+	//	request.Trigger=true
+	//	request.PeerID=peerID
+	//	s.HaMgr.SendPostCopy(context.TODO(), request, "/peer/registry", s.Config.OtherSupernodes[0])
+	//}
+
 	logrus.Debugf("success to register task %+v", taskCreateRequest)
 	return EncodeResponse(rw, http.StatusOK, &types.ResultInfo{
 		Code: constants.Success,
@@ -127,30 +136,38 @@ func (s *Server) pullPieceTask(ctx context.Context, rw http.ResponseWriter, req 
 	params := req.URL.Query()
 	taskID := params.Get("taskId")
 	srcCID := params.Get("srcCid")
-
+	// try to get dstPID
+	dstCID := params.Get("dstCid")
 	request := &types.PiecePullRequest{
 		DfgetTaskStatus: statusMap[params.Get("status")],
 		PieceRange:      params.Get("range"),
 		PieceResult:     resultMap[params.Get("result")],
+		DstCid:dstCID,
 	}
 
-	// try to get dstPID
-	dstCID := params.Get("dstCid")
-	if !stringutils.IsEmptyStr(dstCID) {
-		dstDfgetTask, err := s.DfgetTaskMgr.Get(ctx, dstCID, taskID)
-		if err != nil {
-			logrus.Warnf("failed to get dfget task by dstCID(%s) and taskID(%s), and the srcCID is %s, err: %v",
-				dstCID, taskID, srcCID, err)
-		} else {
-			request.DstPID = dstDfgetTask.PeerID
+	taskInfo,err:=s.TaskMgr.Get(ctx,taskID)
+	if err!=nil{
+		return err
+	}
+	if s.Config.UseHA&&taskInfo.CDNPeerID!=s.Config.GetSuperPID(){
+		request.DstPID=s.Config.GetSuperPID()
+	}else{
+		if !stringutils.IsEmptyStr(dstCID) {
+			dstDfgetTask, err := s.DfgetTaskMgr.Get(ctx, dstCID, taskID)
+			if err != nil {
+				logrus.Warnf("failed to get dfget task by dstCID(%s) and taskID(%s), and the srcCID is %s, err: %v",
+					dstCID, taskID, srcCID, err)
+			} else {
+				request.DstPID = dstDfgetTask.PeerID
+			}
 		}
 	}
-
 	isFinished, data, err := s.TaskMgr.GetPieces(ctx, taskID, srcCID, request)
 	if err != nil {
 		if errortypes.IsCDNFail(err) {
 			logrus.Errorf("taskID:%s, failed to get pieces %+v: %v", taskID, request, err)
 		}
+
 		resultInfo := NewResultInfoWithError(err)
 		return EncodeResponse(rw, http.StatusOK, &types.ResultInfo{
 			Code: int32(resultInfo.code),
@@ -176,16 +193,12 @@ func (s *Server) pullPieceTask(ctx context.Context, rw http.ResponseWriter, req 
 	}
 
 	for _, v := range pieceInfos {
-		cid, err := s.DfgetTaskMgr.GetCIDByPeerIDAndTaskID(ctx, v.PID, taskID)
-		if err != nil {
-			continue
-		}
 		datas = append(datas, &PullPieceTaskResponseContinueData{
 			Range:     v.PieceRange,
 			PieceNum:  sutil.CalculatePieceNum(v.PieceRange),
 			PieceSize: v.PieceSize,
 			PieceMd5:  v.PieceMD5,
-			Cid:       cid,
+			Cid:       v.Cid,
 			PeerIP:    v.PeerIP,
 			PeerPort:  int(v.PeerPort),
 			Path:      v.Path,
@@ -198,23 +211,38 @@ func (s *Server) pullPieceTask(ctx context.Context, rw http.ResponseWriter, req 
 }
 
 func (s *Server) reportPiece(ctx context.Context, rw http.ResponseWriter, req *http.Request) (err error) {
+	var request  *types.PieceUpdateRequest
 	params := req.URL.Query()
 	taskID := params.Get("taskId")
 	srcCID := params.Get("cid")
 	dstCID := params.Get("dstCid")
 	pieceRange := params.Get("pieceRange")
-
-	dstDfgetTask, err := s.DfgetTaskMgr.Get(ctx, dstCID, taskID)
-	if err != nil {
+	taskInfo,err:=s.TaskMgr.Get(ctx,taskID)
+	if err!=nil{
 		return err
 	}
+	if s.Config.UseHA&&taskInfo.CDNPeerID!=s.Config.GetSuperPID(){
+		request = &types.PieceUpdateRequest{
+			ClientID:    srcCID,
+			DstPID:      s.Config.GetSuperPID(),
+			PieceStatus: types.PieceUpdateRequestPieceStatusSUCCESS,
+			DstCID:      dstCID,
+			SendCopy:true,
+		}
+	}else{
+		dstDfgetTask, err := s.DfgetTaskMgr.Get(ctx, dstCID, taskID)
+		if err != nil {
+			return err
+		}
+		request = &types.PieceUpdateRequest{
+			ClientID:    srcCID,
+			DstPID:      dstDfgetTask.PeerID,
+			PieceStatus: types.PieceUpdateRequestPieceStatusSUCCESS,
+			DstCID:      dstCID,
+			SendCopy:false,
+		}
 
-	request := &types.PieceUpdateRequest{
-		ClientID:    srcCID,
-		DstPID:      dstDfgetTask.PeerID,
-		PieceStatus: types.PieceUpdateRequestPieceStatusSUCCESS,
 	}
-
 	if err := s.TaskMgr.UpdatePieceStatus(ctx, taskID, pieceRange, request); err != nil {
 		logrus.Errorf("failed to update pieces status %+v: %v", request, err)
 		return err
@@ -230,6 +258,23 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
 
+	taskinfo ,err:=s.TaskMgr.Get(ctx,taskID)
+	if taskinfo.CDNPeerID!=s.Config.GetSuperPID(){
+		var  resp bool
+		for _,node :=range s.Config.GetOtherSupernodeInfo(){
+			if node.PID==taskinfo.CDNPeerID{
+				request:= ha.RpcServerDownRequest{
+					TaskID:taskID,
+					CID:cID,
+				}
+				err:=node.RPCClient.Call("RpcManager.RpcDfgetServerDown", request, &resp)
+				if err!=nil{
+					fmt.Println("####",err)
+					logrus.Errorf("failed to send server down request to supernode,err: %v",err)
+				}
+			}
+		}
+	}
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)
 	if err != nil {
 		return err

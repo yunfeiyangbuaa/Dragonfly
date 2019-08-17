@@ -99,7 +99,7 @@ func (re *reporter) processCacheByQuick(ctx context.Context, taskID string, meta
 		return false, nil, nil
 	}
 
-	return true, getUpdateTaskInfo(types.TaskInfoCdnStatusSUCCESS, metaData.Md5, metaData.FileLength,re.cfg.GetSuperPID()),
+	return true, getUpdateTaskInfo(types.TaskInfoCdnStatusSUCCESS, metaData.Md5, metaData.FileLength, re.cfg.GetSuperPID()),
 		re.reportPiecesStatus(ctx, taskID, pieceMd5s)
 }
 
@@ -147,7 +147,7 @@ func (re *reporter) processCacheByReadFile(ctx context.Context, taskID string, m
 	}
 	logrus.Infof("success to update status and result fileMetaData(%+v) for taskID(%s)", fmd, taskID)
 
-	return nil, getUpdateTaskInfo(types.TaskInfoCdnStatusSUCCESS, fileMd5Value, result.fileLength,re.cfg.GetSuperPID()),
+	return nil, getUpdateTaskInfo(types.TaskInfoCdnStatusSUCCESS, fileMd5Value, result.fileLength, re.cfg.GetSuperPID()),
 		re.metaDataManager.writePieceMD5s(ctx, taskID, fileMd5Value, result.pieceMd5s)
 }
 

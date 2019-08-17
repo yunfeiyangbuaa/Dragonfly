@@ -83,7 +83,7 @@ type TaskInfo struct {
 	//
 	TaskURL string `json:"taskURL,omitempty"`
 
-	CDNPeerID string  `json:"cdnPeerID,omitempty"`
+	CDNPeerID string `json:"cdnPeerID,omitempty"`
 }
 
 // Validate validates this task info

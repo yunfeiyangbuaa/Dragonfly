@@ -31,6 +31,10 @@ type PieceUpdateRequest struct {
 	//
 	// Enum: [FAILED SUCCESS INVALID SEMISUC]
 	PieceStatus string `json:"pieceStatus,omitempty"`
+
+	DstCID string `json:"dstCid,omitempty"`
+
+	SendCopy bool `json:"sendCopy,omitempty"`
 }
 
 // Validate validates this piece update request

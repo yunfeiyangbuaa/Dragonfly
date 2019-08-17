@@ -17,10 +17,6 @@
 package app
 
 import (
-	"fmt"
-
-	"github.com/dragonflyoss/Dragonfly/version"
-
 	"github.com/spf13/cobra"
 )
 
@@ -35,7 +31,6 @@ var versionCmd = &cobra.Command{
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		fmt.Println(version.Print("dfget"))
 		return nil
 	},
 	Example: versionExample(),

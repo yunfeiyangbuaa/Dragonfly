@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	apiTypes "github.com/dragonflyoss/Dragonfly/apis/types"
-	"github.com/dragonflyoss/Dragonfly/dfget/core/api"
+	"github.com/dragonflyoss/Dragonfly/pkg/httputils"
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr"
 	"math/rand"
 	"os"
+	"time"
 
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
@@ -19,7 +20,6 @@ import (
 type Manager struct {
 	nodeStatus int
 	tool       Tool
-	copyAPI    api.SupernodeAPI
 	config     *config.Config
 
 	PeerMgr      mgr.PeerMgr
@@ -27,6 +27,7 @@ type Manager struct {
 	ProgressMgr  mgr.ProgressMgr
 	CDNMgr       mgr.CDNMgr
 	SchedulerMgr mgr.SchedulerMgr
+	HTTPClient   httputils.SimpleHTTPClient
 }
 
 // NewManager produces the Manager object.
@@ -43,8 +44,8 @@ func NewManager(cfg *config.Config, peerMgr mgr.PeerMgr, dfgetTaskMgr mgr.DfgetT
 		}
 	}
 	return &Manager{
-		config:  cfg,
-		copyAPI: api.NewSupernodeAPI(),
+		config:     cfg,
+		HTTPClient: httputils.DefaultHTTPClient,
 
 		tool:         toolMgr,
 		DfgetTaskMgr: dfgetTaskMgr,
@@ -72,6 +73,20 @@ func (ha *Manager) HADaemon(ctx context.Context) error {
 // CloseHaManager closes the tool use to implement supernode ha.
 func (ha *Manager) CloseHaManager(ctx context.Context) error {
 	return ha.tool.Close(ctx)
+}
+
+func (ha *Manager) SendPostCopy(ctx context.Context, req interface{}, path string, node config.SupernodeInfo) error {
+	url := fmt.Sprintf("%s://%s:%d%s", "http", node.IP, node.ListenPort, path)
+	if _, _, e := ha.Post(url, req, 5*time.Second); e != nil {
+		logrus.Errorf("failed to send post copy,err: %v", e)
+		return e
+	}
+	return nil
+}
+
+//Post sends post request to supernode
+func (ha *Manager) Post(url string, body interface{}, timeout time.Duration) (code int, res []byte, e error) {
+	return ha.HTTPClient.PostJSON(url, body, 5*time.Second)
 }
 
 //// SendRegisterRequestCopy send dfget register req copy to other supernode to register
@@ -126,7 +141,6 @@ func (ha *Manager) addSupernodeCdnResource(ctx context.Context, task *apiTypes.T
 	ha.ProgressMgr.InitProgress(ctx, task.ID, node.PID, cid)
 	return nil
 }
-
 
 //// SendGetCopy sends dfget's get request copy to standby supernode
 //func (ha *Manager) SendGetCopy(ctx context.Context, path string, params string, node config.SupernodeInfo) error {

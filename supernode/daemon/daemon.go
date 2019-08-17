@@ -82,11 +82,11 @@ func (d *Daemon) RegisterSuperNode() error {
 
 // Run runs the daemon.
 func (d *Daemon) Run() error {
-	if d.config.AdvertiseIP=="127.0.3.0"{
-		d.config.HARpcPort=9001
+	if d.config.AdvertiseIP == "127.0.3.0" {
+		d.config.HARpcPort = 9001
 	}
 	if d.config.UseHA == true {
-		if err := ha.StartRPCServer(d.config, d.server.CdnMgr, d.server.DfgetTaskMgr, d.server.ProgressMgr, d.server.TaskMgr); err != nil {
+		if err := ha.StartRPCServer(d.config, d.server.CdnMgr, d.server.DfgetTaskMgr, d.server.ProgressMgr, d.server.TaskMgr,d.server.PeerMgr); err != nil {
 			logrus.Errorf("failed to open rpc port,err: %v", err)
 			return err
 		}

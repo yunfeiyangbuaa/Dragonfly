@@ -132,7 +132,7 @@ func NewBaseProperties() *BaseProperties {
 		EnableProfiler:          false,
 		Debug:                   false,
 		FailAccessInterval:      3,
-		UseHA:                   false,
+		UseHA:                   true,
 		HAConfig:                []string{"127.0.0.1:2379"},
 		HARpcPort:               9000,
 	}

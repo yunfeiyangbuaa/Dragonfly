@@ -35,14 +35,15 @@ func getPieceHeader(dataSize, pieceSize int32) uint32 {
 }
 
 func getUpdateTaskInfoWithStatusOnly(cdnStatus string) *types.TaskInfo {
-	return getUpdateTaskInfo(cdnStatus, "", 0)
+	return getUpdateTaskInfo(cdnStatus, "", 0,"")
 }
 
-func getUpdateTaskInfo(cdnStatus, realMD5 string, fileLength int64) *types.TaskInfo {
+func getUpdateTaskInfo(cdnStatus, realMD5 string, fileLength int64,cdnPID string) *types.TaskInfo {
 	return &types.TaskInfo{
 		CdnStatus:  cdnStatus,
 		FileLength: fileLength,
 		RealMd5:    realMD5,
+		CDNPeerID:  cdnPID,
 	}
 }
 

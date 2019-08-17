@@ -82,6 +82,8 @@ type TaskInfo struct {
 	// --filter parameter of dfget. The usage of it is that different rawURL may generate the same taskID.
 	//
 	TaskURL string `json:"taskURL,omitempty"`
+
+	CDNPeerID string  `json:"cdnPeerID,omitempty"`
 }
 
 // Validate validates this task info

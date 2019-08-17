@@ -19,6 +19,7 @@ package task
 import (
 	"context"
 	"fmt"
+	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr/ha"
 	"net/http"
 	"time"
 
@@ -174,6 +175,10 @@ func (tm *Manager) updateTask(taskID string, updateTaskInfo *types.TaskInfo) err
 		task.FileLength = updateTaskInfo.FileLength
 	}
 
+	if updateTaskInfo.CDNPeerID!=""{
+		task.CDNPeerID=updateTaskInfo.CDNPeerID
+	}
+
 	if !stringutils.IsEmptyStr(updateTaskInfo.RealMd5) {
 		task.RealMd5 = updateTaskInfo.RealMd5
 	}
@@ -218,6 +223,64 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 		return nil
 	}
 
+	// ask cdn resource from other supernodes
+	if tm.cfg.UseHA{
+		fmt.Println("!!!!!!!")
+		for _,node:= range tm.cfg.OtherSupernodes{
+			var resp ha.RpcUpdateTaskInfoRequest
+			err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo",task.ID, &resp)
+			if err != nil {
+				logrus.Debugf("failed to get task %s from supernode %s",task.ID,node.PID)
+				continue
+			}
+			if resp.CdnStatus==types.TaskInfoCdnStatusSUCCESS{
+				if err := tm.updateTask(task.ID, &types.TaskInfo{
+					CdnStatus: resp.CdnStatus,
+					CDNPeerID: resp.CDNPeerID,
+					Md5:resp.RealMd5,
+					ID:task.ID,
+					FileLength:resp.FileLength,
+				}); err != nil {
+					return err
+				}
+				break
+			}
+			if resp.CdnStatus==types.DfGetTaskStatusRUNNING||resp.CdnStatus==types.TaskInfoCdnStatusWAITING{
+				if err := tm.updateTask(task.ID, &types.TaskInfo{
+					CdnStatus: resp.CdnStatus,
+					CDNPeerID: resp.CDNPeerID,
+				}); err != nil {
+					return err
+				}
+				go func(){
+					for{
+						time.Sleep(5*time.Second)
+						err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo",task.ID, &resp)
+						if err != nil {
+							logrus.Debugf("failed to get task %s from supernode %s",task.ID,node.PID)
+						}
+						if resp.CdnStatus==types.TaskInfoCdnStatusSUCCESS||resp.CdnStatus==types.DfGetTaskStatusFAILED{
+							 tm.updateTask(task.ID, &types.TaskInfo{
+								CdnStatus: resp.CdnStatus,
+								CDNPeerID: resp.CDNPeerID,
+								Md5:resp.RealMd5,
+								ID:task.ID,
+								FileLength:resp.FileLength,
+							})
+							 break
+						}
+					}
+				}()
+				break
+			}
+		}
+	}
+	fmt.Println("@@@")
+	if !isFrozen(task.CdnStatus) {
+		logrus.Infof("CDN(%s) is running or has been downloaded successfully for taskID for other supernode: %s", task.CdnStatus, task.ID)
+		return nil
+	}
+
 	if isWait(task.CdnStatus) {
 		if err := tm.initCdnNode(ctx, task); err != nil {
 			logrus.Errorf("failed to init cdn node for taskID %s: %v", task.ID, err)
@@ -227,6 +290,7 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 	}
 	if err := tm.updateTask(task.ID, &types.TaskInfo{
 		CdnStatus: types.TaskInfoCdnStatusRUNNING,
+		CDNPeerID: tm.cfg.GetSuperPID(),
 	}); err != nil {
 		return err
 	}

@@ -8,11 +8,8 @@ import (
 	"strings"
 	"time"
 
-	apiTypes "github.com/dragonflyoss/Dragonfly/apis/types"
 	"github.com/dragonflyoss/Dragonfly/supernode/config"
 	"github.com/dragonflyoss/Dragonfly/supernode/daemon/mgr"
-	"github.com/pkg/errors"
-
 	"github.com/go-openapi/strfmt"
 	"github.com/sirupsen/logrus"
 	"go.etcd.io/etcd/clientv3"
@@ -105,7 +102,7 @@ func (etcd *EtcdMgr) WatchSupernodesChange(ctx context.Context, key string) erro
 		logrus.Errorf("failed to get standby supernode info,err: %v", err)
 		return err
 	}
-	etcd.registerOtherSupernodesAsPeer(ctx)
+	//etcd.registerOtherSupernodesAsPeer(ctx)
 	watcher := clientv3.NewWatcher(etcd.client)
 	watchChan := watcher.Watch(ctx, key, clientv3.WithPrefix())
 
@@ -116,14 +113,6 @@ func (etcd *EtcdMgr) WatchSupernodesChange(ctx context.Context, key string) erro
 			if _, err := etcd.getSupenrodesInfo(ctx, key); err != nil {
 				logrus.Errorf("failed to get standby supernode info,err: %v", err)
 				return err
-			}
-			switch event.Type {
-			case SupernodeDEL:
-				etcd.registerOtherSupernodesAsPeer(ctx)
-			case SupernodeADD:
-				etcd.deRegisterOtherSupernodePeer(ctx)
-			default:
-				logrus.Warnf("failed to watch active supernode,unexpected response: %d", int(event.Type))
 			}
 		}
 	}
@@ -170,80 +159,4 @@ func (etcd *EtcdMgr) getSupenrodesInfo(ctx context.Context, key string) ([]confi
 	}
 	etcd.config.SetOtherSupernodeInfo(nodes)
 	return nodes, nil
-}
-
-// registerOtherSupernodesAsPeer registers all other supernodes as a peer
-func (etcd *EtcdMgr) registerOtherSupernodesAsPeer(ctx context.Context) {
-	supernodes := etcd.config.GetOtherSupernodeInfo()
-	for _, node := range etcd.config.GetOtherSupernodeInfo() {
-		if err := etcd.registerSupernodeAsPeer(ctx, node); err != nil {
-
-			// if failed,delete the supernode in config
-			var newSupernodes []config.SupernodeInfo
-			for k, v := range supernodes {
-				if v == node {
-					kk := k + 1
-					newSupernodes = append(supernodes[:k], supernodes[kk:]...)
-				}
-			}
-			etcd.config.SetOtherSupernodeInfo(newSupernodes)
-		}
-	}
-
-}
-
-// registerSupernodeAsPeer registers supernode as a peer
-func (etcd *EtcdMgr) registerSupernodeAsPeer(ctx context.Context, node config.SupernodeInfo) (err error) {
-	if node.PID == "" {
-		logrus.Errorf("failed to register a supernode as peer,node PID is nil")
-		return errors.Wrap(err, "failed to register other supernode as peer,a nil supernode's PID")
-	}
-	if node.PID == etcd.config.GetSuperPID() {
-		return nil
-	}
-	// try whether this peer is already exist
-	if peer, err := etcd.PeerMgr.Get(ctx, node.PID); peer != nil || err != nil {
-		return nil
-	}
-	peerCreatRequest := &apiTypes.PeerCreateRequest{
-		IP:       strfmt.IPv4(node.IP),
-		HostName: strfmt.Hostname(node.HostName),
-		Port:     int32(node.DownloadPort),
-		PeerID:   node.PID,
-	}
-	_, err = etcd.PeerMgr.Register(ctx, peerCreatRequest)
-	if err != nil {
-		logrus.Errorf("failed to register other supernode %s as a peer,err %v", node.PID, err)
-		return err
-	}
-	logrus.Infof("success to register supernode as peer,peerID is %s", node.PID)
-	return nil
-}
-
-// deRegisterOtherSupernodePeer find and deregister all offline supernode
-// TODO(yunfeiyangbuaa)modify the code,make it more efficiency
-func (etcd *EtcdMgr) deRegisterOtherSupernodePeer(ctx context.Context) {
-	for _, pre := range etcd.preSupernodes {
-		mark := false
-		for _, now := range etcd.config.GetOtherSupernodeInfo() {
-			if pre.PID == now.PID {
-				mark = true
-				break
-			}
-		}
-		if mark == false {
-			etcd.deRegisterSupernodePeer(ctx, pre)
-			logrus.Info("supernodes %s are off,should delete the peer", pre.PID)
-		}
-	}
-}
-
-// deRegisterSupernodePeer deregister a supernode peer when this supernode is off
-func (etcd *EtcdMgr) deRegisterSupernodePeer(ctx context.Context, node config.SupernodeInfo) {
-	if err := etcd.ProgressMgr.DeletePeerStateByPeerID(ctx, node.PID); err != nil {
-		logrus.Errorf("failed to delete supernode peer peerState  %s,err: %v", node.PID, err)
-	}
-	if err := etcd.PeerMgr.DeRegister(ctx, node.PID); err != nil {
-		logrus.Errorf("failed to delete supernode peer peerMgr %s,err: %v", node.PID, err)
-	}
 }

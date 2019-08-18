@@ -38,7 +38,7 @@ type PiecePullRequest struct {
 	// Enum: [FAILED SUCCESS INVALID SEMISUC]
 	PieceResult string `json:"pieceResult,omitempty"`
 
-	DstCid  string `json:"dstCid"`
+	DstCid string `json:"dstCid"`
 }
 
 // Validate validates this piece pull request

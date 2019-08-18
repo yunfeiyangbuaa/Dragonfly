@@ -72,4 +72,6 @@ type TaskMgr interface {
 	// We use a sting called pieceRange to identify a piece.
 	// A pieceRange separated by a dash, like this: 0-45565, etc.
 	UpdatePieceStatus(ctx context.Context, taskID, pieceRange string, pieceUpdateRequest *types.PieceUpdateRequest) error
+
+	OnlyTriggerDownload(ctx context.Context, req *types.TaskCreateRequest, httpREQ *types.TaskRegisterRequest) error
 }

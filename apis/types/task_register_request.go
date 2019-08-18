@@ -106,8 +106,6 @@ type TaskRegisterRequest struct {
 	Version string `json:"version,omitempty"`
 
 	PeerID string `json:"peerID"`
-
-	Trigger bool `json:"trigger"`
 }
 
 // Validate validates this task register request

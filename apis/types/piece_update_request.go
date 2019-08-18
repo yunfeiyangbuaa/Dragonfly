@@ -35,6 +35,8 @@ type PieceUpdateRequest struct {
 	DstCID string `json:"dstCid,omitempty"`
 
 	SendCopy bool `json:"sendCopy,omitempty"`
+
+	SendCopyPeerID string `json:"sendCopyPeerID"`
 }
 
 // Validate validates this piece update request

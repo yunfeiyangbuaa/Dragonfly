@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/go-openapi/strfmt"
-	"github.com/pkg/errors"
+	//"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -75,7 +75,7 @@ func (ha *Manager) CloseHaManager(ctx context.Context) error {
 	return ha.tool.Close(ctx)
 }
 
-func (ha *Manager) SendPostCopy(ctx context.Context, req interface{}, path string, node config.SupernodeInfo) error {
+func (ha *Manager) SendPostCopy(ctx context.Context, req interface{}, path string, node *config.SupernodeInfo) error {
 	url := fmt.Sprintf("%s://%s:%d%s", "http", node.IP, node.ListenPort, path)
 	if _, _, e := ha.Post(url, req, 5*time.Second); e != nil {
 		logrus.Errorf("failed to send post copy,err: %v", e)
@@ -89,28 +89,19 @@ func (ha *Manager) Post(url string, body interface{}, timeout time.Duration) (co
 	return ha.HTTPClient.PostJSON(url, body, 5*time.Second)
 }
 
-//// SendRegisterRequestCopy send dfget register req copy to other supernode to register
-//func (ha *Manager) SendRegisterRequestCopy(ctx context.Context, req *apiTypes.TaskRegisterRequest, triggerDownload bool) {
-//	index := ha.randomSelectSupernodeTriggerCDN(ctx)
-//	if index == -1 {
-//		return
-//	}
-//	req.TriggerCDN = constants.TriggerFalse
-//	for i, node := range ha.config.OtherSupernodes {
-//		if i == index && triggerDownload == true {
-//			continue
-//		}
-//		if err := ha.SendPostCopy(ctx, req, "/peer/registry", node); err != nil {
-//			logrus.Errorf("failed to send register copy to %s,err: %v", node.PID, err)
-//		}
-//	}
-//	if triggerDownload == true {
-//		req.TriggerCDN = constants.TriggerBySupernode
-//		if err := ha.SendPostCopy(ctx, req, "/peer/registry", ha.config.OtherSupernodes[index]); err != nil {
-//			logrus.Errorf("failed to send register copy to %s,err: %v", ha.config.OtherSupernodes[index].PID, err)
-//		}
-//	}
-//}
+// SendRegisterRequestCopy send dfget register req copy to other supernode to register
+func (ha *Manager) TriggerOtherSupernodeDownload(ctx context.Context, req *apiTypes.TaskRegisterRequest) error {
+	index := ha.randomSelectSupernodeTriggerCDN(ctx)
+	if index == -1 {
+		return nil
+	}
+	err := ha.config.GetOtherSupernodeInfo()[index].RPCClient.Call("RpcManager.RpcOnlyTriggerCDNDownload", req, nil)
+	if err != nil {
+		logrus.Errorf("failed to trigger CDN download via rpc,err: %v", err)
+		return err
+	}
+	return nil
+}
 
 func (ha *Manager) randomSelectSupernodeTriggerCDN(ctx context.Context) int {
 	if supernodeNum := len(ha.config.OtherSupernodes); supernodeNum == 0 {
@@ -119,28 +110,28 @@ func (ha *Manager) randomSelectSupernodeTriggerCDN(ctx context.Context) int {
 	return rand.Intn(len(ha.config.OtherSupernodes))
 }
 
-func (ha *Manager) addSupernodeCdnResource(ctx context.Context, task *apiTypes.TaskInfo, node config.SupernodeInfo) error {
-	if node.PID == ha.config.GetSuperPID() {
-		return nil
-	}
-	cid := fmt.Sprintf("%s:%s~%s", "cdnnode", node.IP, task.ID)
-	path, err := ha.CDNMgr.GetHTTPPath(ctx, task.ID)
-	if err != nil {
-		return err
-	}
-	if err := ha.DfgetTaskMgr.Add(ctx, &apiTypes.DfGetTask{
-		CID:       cid,
-		Path:      path,
-		PeerID:    node.PID,
-		PieceSize: task.PieceSize,
-		Status:    apiTypes.DfGetTaskStatusWAITING,
-		TaskID:    task.ID,
-	}); err != nil {
-		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", task.ID)
-	}
-	ha.ProgressMgr.InitProgress(ctx, task.ID, node.PID, cid)
-	return nil
-}
+//func (ha *Manager) addSupernodeCdnResource(ctx context.Context, task *apiTypes.TaskInfo, node config.SupernodeInfo) error {
+//	if node.PID == ha.config.GetSuperPID() {
+//		return nil
+//	}
+//	cid := fmt.Sprintf("%s:%s~%s", "cdnnode", node.IP, task.ID)
+//	path, err := ha.CDNMgr.GetHTTPPath(ctx, task.ID)
+//	if err != nil {
+//		return err
+//	}
+//	if err := ha.DfgetTaskMgr.Add(ctx, &apiTypes.DfGetTask{
+//		CID:       cid,
+//		Path:      path,
+//		PeerID:    node.PID,
+//		PieceSize: task.PieceSize,
+//		Status:    apiTypes.DfGetTaskStatusWAITING,
+//		TaskID:    task.ID,
+//	}); err != nil {
+//		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", task.ID)
+//	}
+//	ha.ProgressMgr.InitProgress(ctx, task.ID, node.PID, cid)
+//	return nil
+//}
 
 //// SendGetCopy sends dfget's get request copy to standby supernode
 //func (ha *Manager) SendGetCopy(ctx context.Context, path string, params string, node config.SupernodeInfo) error {
@@ -162,4 +153,205 @@ func (ha *Manager) addSupernodeCdnResource(ctx context.Context, task *apiTypes.T
 //		return e
 //	}
 //	return nil
+//}
+
+//func (rpc *RpcManager) RpcReportCache(taskID string, resp *RpcReportCacheRequest) error {
+//	task, err := rpc.TaskMgr.Get(context.TODO(), taskID)
+//	if err != nil {
+//		return err
+//	}
+//	startNum, hash, _, err := rpc.CdnMgr.DetectCacheForHA(context.TODO(), task)
+//	if err != nil {
+//		return err
+//	}
+//
+//	resp = &RpcReportCacheRequest{
+//		//CdnStatus:  updateTask.CdnStatus,
+//		//FileLength: updateTask.FileLength,
+//		//RealMd5:    updateTask.RealMd5,
+//		StartNum: startNum,
+//		Hash:     hash,
+//	}
+//	return nil
+//}
+//func (rpc *RpcManager) RpcIntCdn(req InitCdnRequest, resp *bool) error {
+//	ctx := context.TODO()
+//	if req.NodePID == rpc.cfg.GetSuperPID() {
+//		return nil
+//	}
+//	cid := fmt.Sprintf("%s:%s~%s", "cdnnode", req.NodeIP, req.TaskID)
+//	path, err := rpc.CdnMgr.GetHTTPPath(ctx, req.TaskID)
+//	if err != nil {
+//		return err
+//	}
+//	if err := rpc.DfgetTaskMgr.Add(context.Background(), &types.DfGetTask{
+//		CID:       cid,
+//		Path:      path,
+//		PeerID:    req.NodePID,
+//		PieceSize: req.TaskPieceSize,
+//		Status:    types.DfGetTaskStatusWAITING,
+//		TaskID:    req.TaskID,
+//	}); err != nil {
+//		return errors.Wrapf(err, "failed to add cdn dfgetTask for taskID %s", req.TaskID)
+//	}
+//	rpc.ProgressMgr.InitProgress(context.Background(), req.TaskID, req.NodePID, cid)
+//	return nil
+//}
+//
+////func (rpc *RpcManager) RpcReportPiece(req ReportPieceRequest, resp *bool) error {
+////	return rpc.CdnMgr.ReportPieceStatusForHA(context.TODO(), req.TaskID, req.CID, req.SrcPID, req.PieceNum, req.Md5, req.PieceStatus)
+////}
+//
+//func (rpc *RpcManager) RpcUpdateTaskInfo(req RpcUpdateTaskInfoRequest, resp *bool) error {
+//	var (
+//		updateTask *types.TaskInfo
+//		err        error
+//	)
+//	if req.CdnStatus == types.TaskInfoCdnStatusFAILED {
+//		updateTask = &types.TaskInfo{
+//			CdnStatus: types.DfGetTaskStatusFAILED,
+//		}
+//	} else if req.CdnStatus == types.TaskInfoCdnStatusSUCCESS {
+//		updateTask = &types.TaskInfo{
+//			CdnStatus:  req.CdnStatus,
+//			FileLength: req.FileLength,
+//			RealMd5:    req.RealMd5,
+//		}
+//	} else {
+//		return errors.Wrapf(err, "failed to update taskinfo via rpc,unexpected req: %v", req)
+//	}
+//	if err = rpc.TaskMgr.Update(context.TODO(), req.TaskID, updateTask); err != nil {
+//		logrus.Errorf("failed to update task %v via rpc,err: %v", updateTask, req)
+//		return err
+//	}
+//	logrus.Infof("success to update task cdn via rpc %+v", updateTask)
+//	return nil
+//}
+//
+//func (rpc *RpcManager) RpcUpdateDfgetTask(req RpcUpdateDfgetRequest, resp *bool) error {
+//	return rpc.DfgetTaskMgr.UpdateStatus(context.TODO(), req.ClientID, req.TaskID, req.DfgetTaskStatus)
+//}
+//
+//func (rpc *RpcManager) RpcUpdateClientProgress(req RpcUpdateClientProgressRequest, resp *bool) error {
+//	return rpc.ProgressMgr.UpdateClientProgress(context.TODO(), req.TaskID, req.ClientID, req.DstPID, req.PieceNum, req.PieceStatus)
+//}
+//
+//func (rpc *RpcManager) RpcPeerLoadAddOne(peerID string, resp *bool) error {
+//	peerState, err := rpc.ProgressMgr.GetPeerStateByPeerID(context.TODO(), peerID)
+//	if err != nil {
+//		return err
+//	}
+//	if peerState.ProducerLoad != nil {
+//		if peerState.ProducerLoad.Add(1) <= config.PeerUpLimit {
+//			return nil
+//		}
+//		peerState.ProducerLoad.Add(-1)
+//	}
+//	return nil
+//}
+//type RpcReportCacheRequest struct {
+//	CdnStatus  string
+//	FileLength int64
+//	RealMd5    string
+//	StartNum   int
+//	Hash       hash.Hash
+//}
+
+////clientID, taskID, dfgetTaskStatus
+//type RpcUpdateDfgetRequest struct {
+//	ClientID        string
+//	TaskID          string
+//	DfgetTaskStatus string
+//}
+
+////ctx, taskID, clientID, dstPID, pieceNums[i], config.PieceRUNNING
+//type RpcUpdateClientProgressRequest struct {
+//	TaskID      string
+//	ClientID    string
+//	DstPID      string
+//	PieceNum    int
+//	PieceStatus int
+//}
+
+//type InitCdnRequest struct {
+//	TaskID        string
+//	TaskPieceSize int32
+//	NodePID       string
+//	NodeIP        string
+//}
+
+//// registerOtherSupernodesAsPeer registers all other supernodes as a peer
+//func (etcd *EtcdMgr) registerOtherSupernodesAsPeer(ctx context.Context) {
+//	supernodes := etcd.config.GetOtherSupernodeInfo()
+//	for _, node := range etcd.config.GetOtherSupernodeInfo() {
+//		if err := etcd.registerSupernodeAsPeer(ctx, node); err != nil {
+//
+//			// if failed,delete the supernode in config
+//			var newSupernodes []config.SupernodeInfo
+//			for k, v := range supernodes {
+//				if v == node {
+//					kk := k + 1
+//					newSupernodes = append(supernodes[:k], supernodes[kk:]...)
+//				}
+//			}
+//			etcd.config.SetOtherSupernodeInfo(newSupernodes)
+//		}
+//	}
+//
+//}
+//
+//// registerSupernodeAsPeer registers supernode as a peer
+//func (etcd *EtcdMgr) registerSupernodeAsPeer(ctx context.Context, node config.SupernodeInfo) (err error) {
+//	if node.PID == "" {
+//		logrus.Errorf("failed to register a supernode as peer,node PID is nil")
+//		return errors.Wrap(err, "failed to register other supernode as peer,a nil supernode's PID")
+//	}
+//	if node.PID == etcd.config.GetSuperPID() {
+//		return nil
+//	}
+//	// try whether this peer is already exist
+//	if peer, err := etcd.PeerMgr.Get(ctx, node.PID); peer != nil || err != nil {
+//		return nil
+//	}
+//	peerCreatRequest := &apiTypes.PeerCreateRequest{
+//		IP:       strfmt.IPv4(node.IP),
+//		HostName: strfmt.Hostname(node.HostName),
+//		Port:     int32(node.DownloadPort),
+//		PeerID:   node.PID,
+//	}
+//	_, err = etcd.PeerMgr.Register(ctx, peerCreatRequest)
+//	if err != nil {
+//		logrus.Errorf("failed to register other supernode %s as a peer,err %v", node.PID, err)
+//		return err
+//	}
+//	logrus.Infof("success to register supernode as peer,peerID is %s", node.PID)
+//	return nil
+//}
+//
+//// deRegisterOtherSupernodePeer find and deregister all offline supernode
+//// TODO(yunfeiyangbuaa)modify the code,make it more efficiency
+//func (etcd *EtcdMgr) deRegisterOtherSupernodePeer(ctx context.Context) {
+//	for _, pre := range etcd.preSupernodes {
+//		mark := false
+//		for _, now := range etcd.config.GetOtherSupernodeInfo() {
+//			if pre.PID == now.PID {
+//				mark = true
+//				break
+//			}
+//		}
+//		if mark == false {
+//			etcd.deRegisterSupernodePeer(ctx, pre)
+//			logrus.Info("supernodes %s are off,should delete the peer", pre.PID)
+//		}
+//	}
+//}
+//
+//// deRegisterSupernodePeer deregister a supernode peer when this supernode is off
+//func (etcd *EtcdMgr) deRegisterSupernodePeer(ctx context.Context, node config.SupernodeInfo) {
+//	if err := etcd.ProgressMgr.DeletePeerStateByPeerID(ctx, node.PID); err != nil {
+//		logrus.Errorf("failed to delete supernode peer peerState  %s,err: %v", node.PID, err)
+//	}
+//	if err := etcd.PeerMgr.DeRegister(ctx, node.PID); err != nil {
+//		logrus.Errorf("failed to delete supernode peer peerMgr %s,err: %v", node.PID, err)
+//	}
 //}

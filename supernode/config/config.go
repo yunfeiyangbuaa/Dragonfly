@@ -18,6 +18,8 @@ package config
 
 import (
 	"fmt"
+	"github.com/dragonflyoss/Dragonfly/pkg/errortypes"
+	"github.com/pkg/errors"
 
 	"net/rpc"
 	"path/filepath"
@@ -111,6 +113,17 @@ func (c *Config) SetOtherSupernodeInfo(otherSupernodes []SupernodeInfo) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 	c.OtherSupernodes = otherSupernodes
+}
+func (c *Config) GetOtherSupernodeInfoByPID(peerID string) (*SupernodeInfo, error) {
+	c.lock.RLock()
+	defer c.lock.RUnlock()
+	for _, node := range c.OtherSupernodes {
+		if node.PID == peerID {
+			return &node, nil
+			break
+		}
+	}
+	return nil, errors.Wrapf(errortypes.ErrDataNotFound, "peerID: %s", peerID)
 }
 
 // NewBaseProperties create an instant with default values.

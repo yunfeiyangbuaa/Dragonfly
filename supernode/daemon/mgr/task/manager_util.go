@@ -69,6 +69,10 @@ func (tm *Manager) addOrUpdateTask(ctx context.Context, req *types.TaskCreateReq
 
 	if v, err := tm.taskStore.Get(taskID); err == nil {
 		task = v.(*types.TaskInfo)
+		if _,err:=tm.cfg.GetOtherSupernodeInfoByPID(task.CDNPeerID);task.CDNPeerID!=""&&err!=nil&&task.CDNPeerID!=tm.cfg.GetSuperPID(){
+			tm.taskStore.Delete(taskID)
+			task=newTask
+		}
 		if !equalsTask(task, newTask) {
 			return nil, errors.Wrapf(errortypes.ErrTaskIDDuplicate, "%s", taskID)
 		}
@@ -154,11 +158,29 @@ func (tm *Manager) updateTask(taskID string, updateTaskInfo *types.TaskInfo) err
 	if err != nil {
 		return err
 	}
-
+	defer func() {
+		for _,peerID :=range task.NotifySupernodesPID{
+			node, err := tm.cfg.GetOtherSupernodeInfoByPID(peerID)
+			if err != nil {
+				continue
+			}
+			req :=ha.RpcUpdateTaskInfoRequest{
+				CdnStatus:updateTaskInfo.CdnStatus,
+				FileLength:updateTaskInfo.FileLength,
+				RealMd5:updateTaskInfo.RealMd5,
+				TaskID:taskID,
+				CDNPeerID:updateTaskInfo.CDNPeerID,
+			}
+			if err := node.RPCClient.Call("RpcManager.RpcUpdateTaskInfo", req, nil); err != nil {
+				logrus.Errorf("failed to update task %s status in supernopde %s,err: %v",taskID,node.PID,err)
+				continue
+			}
+			fmt.Println("suc notify",taskID,node.PID,)
+		}
+	}()
 	if updateTaskInfo.CDNPeerID != "" {
 		task.CDNPeerID = updateTaskInfo.CDNPeerID
 	}
-
 
 	if !isSuccessCDN(updateTaskInfo.CdnStatus) {
 		// when the origin CDNStatus equals success, do not update it to unsuccessful
@@ -179,7 +201,6 @@ func (tm *Manager) updateTask(taskID string, updateTaskInfo *types.TaskInfo) err
 	if updateTaskInfo.FileLength != 0 {
 		task.FileLength = updateTaskInfo.FileLength
 	}
-
 
 	if !stringutils.IsEmptyStr(updateTaskInfo.RealMd5) {
 		task.RealMd5 = updateTaskInfo.RealMd5
@@ -219,47 +240,35 @@ func (tm *Manager) addDfgetTask(ctx context.Context, req *types.TaskCreateReques
 	return dfgetTask, nil
 }
 
-func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInfo, httpREQ *types.TaskRegisterRequest) error {
+func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInfo, onlyTriggerDownload bool, httpREQ *types.TaskRegisterRequest) error {
 	if !isFrozen(task.CdnStatus) {
-		logrus.Infof("CDN(%s) is running or has been downloaded successfully for taskID: %s", task.CdnStatus, task.ID)
-		if task.CDNPeerID!=tm.cfg.GetSuperPID(){
-			for _, node := range tm.cfg.GetOtherSupernodeInfo() {
-				if node.PID == task.CDNPeerID {
-					if err := tm.haMgr.SendPostCopy(context.TODO(), httpREQ, "/peer/registry", node); err != nil {
-						return err
-					}
-					break
-				}
-
-			}
-		}
-		return nil
+		 if _,err:=tm.cfg.GetOtherSupernodeInfoByPID(task.CDNPeerID);err!=nil||task.CDNPeerID==tm.cfg.GetSuperPID(){
+			 logrus.Infof("CDN(%s) is running or has been downloaded successfully for taskID: %s", task.CdnStatus, task.ID)
+			 if tm.cfg.UseHA && task.CDNPeerID != tm.cfg.GetSuperPID() {
+				 node, err := tm.cfg.GetOtherSupernodeInfoByPID(task.CDNPeerID)
+				 if err != nil {
+					 return err
+				 }
+				 if err := tm.haMgr.SendPostCopy(context.TODO(), httpREQ, "/peer/registry", node); err != nil {
+					 return err
+				 }
+			 }
+			 return nil
+		 }
 	}
-
 	// ask cdn resource from other supernodes
-
-	if tm.cfg.UseHA {
-		for _, node := range tm.cfg.OtherSupernodes {
+	if tm.cfg.UseHA && onlyTriggerDownload == false {
+		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
 			var resp ha.RpcUpdateTaskInfoRequest
-			err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo", task.ID, &resp)
-			if err != nil {
-				logrus.Debugf("failed to get task %s from supernode %s", task.ID, node.PID)
+			if err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo", task.ID, &resp); err != nil {
 				continue
 			}
 			if resp.CdnStatus != types.DfGetTaskStatusFAILED {
-				if !httpREQ.Trigger {
-					httpREQ.Trigger = true
-					for _, node := range tm.cfg.GetOtherSupernodeInfo() {
-						if node.PID == resp.CDNPeerID {
-							if err = tm.haMgr.SendPostCopy(context.TODO(), httpREQ, "/peer/registry", node); err != nil {
-								return err
-							}
-							break
-						}
-
-					}
-
+				if err := tm.haMgr.SendPostCopy(context.TODO(), httpREQ, "/peer/registry", &node); err != nil {
+					return err
 				}
+			} else {
+				continue
 			}
 			if resp.CdnStatus == types.TaskInfoCdnStatusSUCCESS {
 				if err := tm.updateTask(task.ID, &types.TaskInfo{
@@ -273,6 +282,9 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 				}
 				break
 			}
+			if err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo", task.ID, &resp); err != nil {
+				continue
+			}
 			if resp.CdnStatus == types.DfGetTaskStatusRUNNING || resp.CdnStatus == types.TaskInfoCdnStatusWAITING {
 				if err := tm.updateTask(task.ID, &types.TaskInfo{
 					CdnStatus: resp.CdnStatus,
@@ -280,33 +292,27 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 				}); err != nil {
 					return err
 				}
-				go func() {
-					for {
-						time.Sleep(5 * time.Second)
-						err := node.RPCClient.Call("RpcManager.RpcGetTaskInfo", task.ID, &resp)
-						if err != nil {
-							logrus.Debugf("failed to get task %s from supernode %s", task.ID, node.PID)
-						}
-						if resp.CdnStatus == types.TaskInfoCdnStatusSUCCESS || resp.CdnStatus == types.DfGetTaskStatusFAILED {
-							tm.updateTask(task.ID, &types.TaskInfo{
-								CdnStatus:  resp.CdnStatus,
-								CDNPeerID:  resp.CDNPeerID,
-								Md5:        resp.RealMd5,
-								ID:         task.ID,
-								FileLength: resp.FileLength,
-							})
-							break
-						}
-					}
-				}()
-				break
+				req:=ha.RpcAddSupernodeWatchRequest{
+					SupernodePID:tm.cfg.GetSuperPID(),
+					TaskID:task.ID,
+				}
+				if err := node.RPCClient.Call("RpcManager.RpcAddSupernodeWatch",req, nil); err != nil {
+					continue
+				}
 			}
+			break
 		}
 	}
+
 	if !isFrozen(task.CdnStatus) {
 		logrus.Infof("CDN(%s) is running or has been downloaded successfully for taskID for other supernode: %s", task.CdnStatus, task.ID)
 		return nil
 	}
+
+	if onlyTriggerDownload == false{
+		tm.haMgr.TriggerOtherSupernodeDownload(ctx, httpREQ)
+	}
+
 	if isWait(task.CdnStatus) {
 		if err := tm.initCdnNode(ctx, task); err != nil {
 			logrus.Errorf("failed to init cdn node for taskID %s: %v", task.ID, err)
@@ -320,7 +326,6 @@ func (tm *Manager) triggerCdnSyncAction(ctx context.Context, task *types.TaskInf
 	}); err != nil {
 		return err
 	}
-
 	go func() {
 		updateTaskInfo, err := tm.cdnMgr.TriggerCDN(ctx, task)
 		tm.metrics.triggerCdnCount.WithLabelValues().Inc()

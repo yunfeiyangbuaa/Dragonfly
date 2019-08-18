@@ -118,7 +118,6 @@ func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest, h
 	if err := validateParams(req); err != nil {
 		return nil, err
 	}
-
 	// Step2: add a new Task or update the exist task
 	failAccessInterval := tm.cfg.FailAccessInterval * time.Minute
 	task, err := tm.addOrUpdateTask(ctx, req, failAccessInterval)
@@ -160,7 +159,7 @@ func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest, h
 	// TODO: defer rollback init Progress
 
 	// Step5: trigger CDN
-	if err := tm.triggerCdnSyncAction(ctx, task, httpREQ); err != nil {
+	if err := tm.triggerCdnSyncAction(ctx, task, false, httpREQ); err != nil {
 		return nil, errors.Wrapf(errortypes.ErrSystemError, "failed to trigger cdn: %v", err)
 	}
 
@@ -169,6 +168,18 @@ func (tm *Manager) Register(ctx context.Context, req *types.TaskCreateRequest, h
 		FileLength: task.HTTPFileLength,
 		PieceSize:  task.PieceSize,
 	}, nil
+}
+func (tm *Manager) OnlyTriggerDownload(ctx context.Context, req *types.TaskCreateRequest, httpREQ *types.TaskRegisterRequest) error {
+	failAccessInterval := tm.cfg.FailAccessInterval * time.Minute
+	task, err := tm.addOrUpdateTask(ctx, req, failAccessInterval)
+	if err != nil {
+		logrus.Infof("failed to add or update task with req %+v: %v", req, err)
+		return err
+	}
+	if err := tm.triggerCdnSyncAction(ctx, task, true, httpREQ); err != nil {
+		return errors.Wrapf(errortypes.ErrSystemError, "failed to trigger cdn: %v", err)
+	}
+	return nil
 }
 
 // Get a task info according to specified taskID.
@@ -235,8 +246,8 @@ func (tm *Manager) GetPieces(ctx context.Context, taskID, clientID string, req *
 	}
 	logrus.Debugf("success to get task: %+v", task)
 
-	if task.CDNPeerID != "" && task.CDNPeerID != tm.cfg.GetSuperPID() {
-		return tm.GetPiecesFromOtherSupernode(ctx , taskID , task , clientID,req , dfgetTaskStatus)
+	if tm.cfg.UseHA && task.CDNPeerID != "" && task.CDNPeerID != tm.cfg.GetSuperPID() {
+		return tm.GetPiecesFromOtherSupernode(ctx, taskID, task, clientID, req, dfgetTaskStatus)
 	}
 
 	// update accessTime for taskID
@@ -258,34 +269,27 @@ func (tm *Manager) GetPieces(ctx context.Context, taskID, clientID string, req *
 
 func (tm *Manager) GetPiecesFromOtherSupernode(ctx context.Context, taskID string, task *types.TaskInfo, clientID string,
 	req *types.PiecePullRequest, dfgetTaskStatus string) (bool, interface{}, error) {
+	var RPCResponse ha.RpcGetPieceResponse
 	if dfgetTaskStatus == types.DfGetTaskStatusWAITING {
-		logrus.Debugf("start to process task(%s) start", taskID)
 		if err := tm.dfgetTaskMgr.UpdateStatus(ctx, clientID, task.ID, types.DfGetTaskStatusRUNNING); err != nil {
 			return false, nil, err
 		}
-	}else  if dfgetTaskStatus == types.DfGetTaskStatusRUNNING {
-		dfgetTask, _:= tm.dfgetTaskMgr.Get(ctx, clientID, taskID)
+	} else if dfgetTaskStatus == types.DfGetTaskStatusRUNNING {
+		dfgetTask, _ := tm.dfgetTaskMgr.Get(ctx, clientID, taskID)
 		pieceNum := util.CalculatePieceNum(req.PieceRange)
 		if pieceNum == -1 {
-		return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "pieceRange: %s", req.PieceRange)
+			return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "pieceRange: %s", req.PieceRange)
 		}
 		pieceStatus, success := convertToPeerPieceStatus(req.PieceResult, req.DfgetTaskStatus)
 		if !success {
-		return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "failed to convert result: %s and status %s to pieceStatus", req.PieceResult, req.DfgetTaskStatus)
+			return false, nil, errors.Wrapf(errortypes.ErrInvalidValue, "failed to convert result: %s and status %s to pieceStatus", req.PieceResult, req.DfgetTaskStatus)
 		}
-
-		logrus.Debugf("start to update progress taskID (%s) srcCID (%s) srcPID (%s) dstPID (%s) pieceNum (%d) pieceStatus (%d)",
-		task.ID, clientID, dfgetTask.PeerID, req.DstPID, pieceNum, pieceStatus)
 		if err := tm.progressMgr.UpdateProgress(ctx, task.ID, clientID, dfgetTask.PeerID, req.DstPID, pieceNum, pieceStatus); err != nil {
-		return false, nil, errors.Wrap(err, "failed to update progress")
+			return false, nil, errors.Wrap(err, "failed to update progress")
 		}
-	}else{
-		logrus.Debugf("start to process task(%s) finish", taskID)
+	} else {
 		return true, nil, tm.processTaskFinish(ctx, taskID, clientID, dfgetTaskStatus)
 	}
-
-	var dstNode config.SupernodeInfo
-
 	RPCReq := ha.RpcGetPieceRequest{
 		DfgetTaskStatus: req.DfgetTaskStatus,
 		PieceResult:     req.PieceResult,
@@ -293,17 +297,14 @@ func (tm *Manager) GetPiecesFromOtherSupernode(ctx context.Context, taskID strin
 		TaskId:          taskID,
 		Cid:             clientID,
 	}
-	for _, node := range tm.cfg.OtherSupernodes {
-		if node.PID == task.CDNPeerID {
-			dstNode = node
-			break
-		}
+	node, err := tm.cfg.GetOtherSupernodeInfoByPID(task.CDNPeerID)
+	if err != nil {
+		return false, nil, err
 	}
-	var RPCResponse ha.RpcGetPieceResponse
-	err:=dstNode.RPCClient.Call("RpcManager.RpcGetPiece", RPCReq, &RPCResponse)
+	err = node.RPCClient.Call("RpcManager.RpcGetPiece", RPCReq, &RPCResponse)
 	if RPCResponse.ErrMsg != "" {
 		return false, nil, errors.Wrapf(errortypes.DfError{RPCResponse.ErrCode, RPCResponse.ErrMsg},
-			"failed to send pull task request %v to other supernode %s,err: %v", RPCReq, dstNode.PID)
+			"failed to send pull task request %v to other supernode %s,err: %v", RPCReq, node.PID)
 	}
 	return RPCResponse.IsFinished, RPCResponse.Data, err
 }
@@ -330,9 +331,8 @@ func (tm *Manager) UpdatePieceStatus(ctx context.Context, taskID, pieceRange str
 		return errors.Wrapf(errortypes.ErrInvalidValue, "result: %s", pieceUpdateRequest.PieceStatus)
 	}
 
-	if tm.cfg.UseHA &&pieceUpdateRequest.SendCopy {
-		var resp bool
-		req := ha.ReportPieceRequest{
+	if tm.cfg.UseHA && pieceUpdateRequest.SendCopy {
+		req := ha.RpcReportPieceRequest{
 			TaskID:      taskID,
 			CID:         pieceUpdateRequest.ClientID,
 			SrcPID:      srcDfgetTask.PeerID,
@@ -340,12 +340,16 @@ func (tm *Manager) UpdatePieceStatus(ctx context.Context, taskID, pieceRange str
 			PieceNum:    pieceNum,
 			PieceStatus: pieceStatus,
 		}
-		for _, node := range tm.cfg.GetOtherSupernodeInfo() {
-			err = node.RPCClient.Call("RpcManager.RpcUpdateProgress", req, &resp)
-			if err != nil {
-				logrus.Errorf("failed send report request %v to other supernode %s,err: %v", req, node.PID, err)
-			}
+		node, err := tm.cfg.GetOtherSupernodeInfoByPID(pieceUpdateRequest.SendCopyPeerID)
+		if err != nil {
+			return err
 		}
+		err = node.RPCClient.Call("RpcManager.RpcUpdateProgress", req, nil)
+		if err != nil {
+			logrus.Errorf("failed send report request %v to other supernode %s,err: %v", req, node.PID, err)
+			return err
+		}
+
 	}
 
 	return tm.progressMgr.UpdateProgress(ctx, taskID, pieceUpdateRequest.ClientID,

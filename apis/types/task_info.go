@@ -84,6 +84,8 @@ type TaskInfo struct {
 	TaskURL string `json:"taskURL,omitempty"`
 
 	CDNPeerID string `json:"cdnPeerID,omitempty"`
+
+	NotifySupernodesPID []string `json:"notifySupernodesPID"`
 }
 
 // Validate validates this task info

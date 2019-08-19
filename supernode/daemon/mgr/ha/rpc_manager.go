@@ -64,10 +64,11 @@ type RpcServerDownRequest struct {
 	TaskID string
 	CID    string
 }
-type RpcAddSupernodeWatchRequest struct{
-	TaskID string
-	SupernodePID  string
+type RpcAddSupernodeWatchRequest struct {
+	TaskID       string
+	SupernodePID string
 }
+
 func NewRpcMgr(cfg *config.Config, CdnMgr mgr.CDNMgr, DfgetTaskMgr mgr.DfgetTaskMgr, ProgressMgr mgr.ProgressMgr, TaskMgr mgr.TaskMgr, PeerMgr mgr.PeerMgr) *RpcManager {
 	rpcMgr := &RpcManager{
 		CdnMgr:       CdnMgr,
@@ -90,7 +91,6 @@ func StartRPCServer(cfg *config.Config, CdnMgr mgr.CDNMgr, DfgetTaskMgr mgr.Dfge
 		return err
 	}
 	go http.Serve(lis, nil)
-	fmt.Printf("open rpc server,address: %s\n", rpcAddress)
 	return nil
 }
 
@@ -213,15 +213,13 @@ func (rpc *RpcManager) RpcUpdateTaskInfo(req RpcUpdateTaskInfoRequest, resp *boo
 		return err
 	}
 	logrus.Infof("success to update task cdn via rpc %+v", updateTask)
-	fmt.Println("rpc update task",req)
 	return nil
 }
-func (rpc *RpcManager)RpcAddSupernodeWatch(req RpcAddSupernodeWatchRequest,resp *bool)error{
-	task, err := rpc.TaskMgr.Get(context.TODO(),req.TaskID)
+func (rpc *RpcManager) RpcAddSupernodeWatch(req RpcAddSupernodeWatchRequest, resp *bool) error {
+	task, err := rpc.TaskMgr.Get(context.TODO(), req.TaskID)
 	if err != nil {
 		return err
 	}
-	task.NotifySupernodesPID=append(task.NotifySupernodesPID, req.SupernodePID)
-	fmt.Println("success add a supernode watch",req,task.NotifySupernodesPID)
+	task.NotifySupernodesPID = append(task.NotifySupernodesPID, req.SupernodePID)
 	return nil
 }

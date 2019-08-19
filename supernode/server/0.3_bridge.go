@@ -245,8 +245,10 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	params := req.URL.Query()
 	taskID := params.Get("taskId")
 	cID := params.Get("cid")
-
 	taskinfo, err := s.TaskMgr.Get(ctx, taskID)
+	if err != nil {
+		return err
+	}
 	if s.Config.UseHA && taskinfo.CDNPeerID != s.Config.GetSuperPID() {
 		node, err := s.Config.GetOtherSupernodeInfoByPID(taskinfo.CDNPeerID)
 		if err != nil {
@@ -258,7 +260,7 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 		}
 		err = node.RPCClient.Call("RpcManager.RpcDfgetServerDown", request, nil)
 		if err != nil {
-			logrus.Errorf("failed to send server down request to supernode,err: %v", err)
+			logrus.Errorf("failed to send server down request to supernode %s,err: %v", node.PID, err)
 			return err
 		}
 	}

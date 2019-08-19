@@ -97,10 +97,3 @@ const (
 	ClientErrorFileNotExist    = "FILE_NOT_EXIST"
 	ClientErrorFileMd5NotMatch = "FILE_MD5_NOT_MATCH"
 )
-
-/* the signal marks whether trigger cdn download*/
-const (
-	TriggerFalse       = -1
-	TriggerByDfget     = 0
-	TriggerBySupernode = 1
-)

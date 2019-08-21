@@ -19,6 +19,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/dragonflyoss/Dragonfly/apis/types"
@@ -233,6 +234,7 @@ func (s *Server) reportServiceDown(ctx context.Context, rw http.ResponseWriter, 
 	// get peerID according to the CID and taskID
 	dfgetTask, err := s.DfgetTaskMgr.Get(ctx, cID, taskID)
 	if err != nil {
+		fmt.Printf("failed to server down,err: %v\n",err)
 		return err
 	}
 	s.ProgressMgr.UpdatePeerServiceDown(ctx, dfgetTask.PeerID)

@@ -18,9 +18,7 @@ package app
 
 import (
 	"fmt"
-
 	"github.com/dragonflyoss/Dragonfly/version"
-
 	"github.com/spf13/cobra"
 )
 
